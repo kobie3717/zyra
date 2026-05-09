@@ -1,5 +1,5 @@
 diff --git a/node_modules/@whiskeysockets/baileys/lib/Signal/libsignal.js b/node_modules/@whiskeysockets/baileys/lib/Signal/libsignal.js
-index 6f2b2a8..8ee107a 100644
+index beadd06..623fdb5 100644
 --- a/node_modules/@whiskeysockets/baileys/lib/Signal/libsignal.js
 +++ b/node_modules/@whiskeysockets/baileys/lib/Signal/libsignal.js
 @@ -40,6 +40,23 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
@@ -23,10 +23,10 @@ index 6f2b2a8..8ee107a 100644
 +        }
 +        return jid;
 +    };
-     const repository = {
-         decryptGroupMessage({ group, authorJid, msg }) {
-             const senderName = jidToSignalSenderKeyName(group, authorJid);
-@@ -95,21 +112,23 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
+     const ensureSenderKeyAndCreateSkdm = async (group, meId) => {
+         const senderName = jidToSignalSenderKeyName(group, meId);
+         const senderNameStr = senderName.toString();
+@@ -105,21 +122,23 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
                  }
                  return result;
              }
@@ -54,8 +54,8 @@ index 6f2b2a8..8ee107a 100644
 +            }, canonicalJid);
          },
          async encryptGroupMessage({ group, meId, data }) {
-             const senderName = jidToSignalSenderKeyName(group, meId);
-@@ -242,7 +261,7 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
+             return parsedKeys.transaction(async () => {
+@@ -272,7 +291,7 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
                  // Bulk fetch PN sessions - already exist (verified during device discovery)
                  const pnAddrStrings = Array.from(new Set(migrationOps.map(op => op.fromAddr.toString())));
                  const pnSessions = await parsedKeys.get('session', pnAddrStrings);
@@ -64,7 +64,7 @@ index 6f2b2a8..8ee107a 100644
                  const sessionUpdates = {};
                  for (const op of migrationOps) {
                      const pnAddrStr = op.fromAddr.toString();
-@@ -252,9 +271,10 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
+@@ -282,9 +301,10 @@ export function makeLibSignalRepository(auth, logger, pnToLIDFunc) {
                          // Session exists (guaranteed from device discovery)
                          const fromSession = libsignal.SessionRecord.deserialize(pnSession);
                          if (fromSession.haveOpenSession()) {
@@ -77,7 +77,7 @@ index 6f2b2a8..8ee107a 100644
                              migratedCount++;
                          }
                      }
-@@ -294,7 +314,38 @@ const jidToSignalProtocolAddress = (jid) => {
+@@ -324,7 +344,38 @@ const jidToSignalProtocolAddress = (jid) => {
  const jidToSignalSenderKeyName = (group, user) => {
      return new SenderKeyName(group, jidToSignalProtocolAddress(user));
  };
@@ -116,7 +116,7 @@ index 6f2b2a8..8ee107a 100644
      // Shared function to resolve PN signal address to LID if mapping exists
      const resolveLIDSignalAddress = async (id) => {
          if (id.includes('.')) {
-@@ -369,7 +420,12 @@ function signalStorage({ creds, keys }, lidMapping) {
+@@ -397,7 +448,12 @@ function signalStorage({ creds, keys }, lidMapping) {
                  };
              }
          },
@@ -130,64 +130,3 @@ index 6f2b2a8..8ee107a 100644
          loadSignedPreKey: () => {
              const key = creds.signedPreKey;
              return {
-diff --git a/node_modules/@whiskeysockets/baileys/lib/Socket/messages-recv.js b/node_modules/@whiskeysockets/baileys/lib/Socket/messages-recv.js
-index 3e7334a..948896f 100644
---- a/node_modules/@whiskeysockets/baileys/lib/Socket/messages-recv.js
-+++ b/node_modules/@whiskeysockets/baileys/lib/Socket/messages-recv.js
-@@ -89,20 +89,31 @@ export const makeMessagesRecvSocket = (config) => {
-     // Handles mex newsletter notifications
-     const handleMexNewsletterNotification = async (node) => {
-         const mexNode = getBinaryNodeChild(node, 'mex');
--        if (!mexNode?.content) {
-+        const updateNode = mexNode?.content ? null : getBinaryNodeChild(node, 'update') || getAllBinaryNodeChildren(node)[0];
-+        const payloadNode = mexNode?.content ? mexNode : updateNode;
-+        if (!payloadNode?.content) {
-             logger.warn({ node }, 'Invalid mex newsletter notification');
-             return;
-         }
-         let data;
-         try {
--            data = JSON.parse(mexNode.content.toString());
-+            const contentBuf = typeof payloadNode.content === 'string'
-+                ? Buffer.from(payloadNode.content, 'binary')
-+                : Buffer.from(payloadNode.content);
-+            data = JSON.parse(contentBuf.toString());
-         }
-         catch (error) {
-             logger.error({ err: error, node }, 'Failed to parse mex newsletter notification');
-             return;
-         }
--        const operation = data?.operation;
--        const updates = data?.updates;
-+        const operation = data?.operation ?? payloadNode?.attrs?.op_name;
-+        let updates = data?.updates;
-+        if (!updates) {
-+            const linkedProfiles = data?.data?.xwa2_notify_linked_profiles;
-+            if (linkedProfiles) {
-+                updates = [linkedProfiles];
-+            }
-+        }
-         if (!updates || !operation) {
-             logger.warn({ data }, 'Invalid mex newsletter notification content');
-             return;
-@@ -132,6 +143,20 @@ export const makeMessagesRecvSocket = (config) => {
-                     }
-                 }
-                 break;
-+            case 'NotificationLinkedProfilesUpdates':
-+                for (const update of updates) {
-+                    const lid = update?.jid;
-+                    const addedProfiles = Array.isArray(update?.added_profiles) ? update.added_profiles : [];
-+                    for (const profile of addedProfiles) {
-+                        const pn = typeof profile === 'string'
-+                            ? profile
-+                            : profile?.pn ?? profile?.jid ?? null;
-+                        if (lid && pn) {
-+                            ev.emit('lid-mapping.update', { lid, pn });
-+                        }
-+                    }
-+                }
-+                break;
-             default:
-                 logger.info({ operation, data }, 'Unhandled mex newsletter notification');
-                 break;

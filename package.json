@@ -31,7 +31,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@kaikybrofc/logger-module": "^1.0.4",
-    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#8e5093c198de5c5c0230a76e8a7224f6006ebb2e",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#a263cb0eea3e2516e88cc3e25f51034d0375f3ae",
     "baileys-antiban": "github:kobie3717/baileys-antiban#master",
     "dotenv": "^16.4.5",
     "fflate": "^0.8.2",
