@@ -54,7 +54,7 @@
   },
   "overrides": {
     "vite": "8.0.5",
-    "basic-ftp": "5.3.0",
+    "basic-ftp": "5.3.1",
     "libsignal": {
       "protobufjs": "7.5.5"
     },
