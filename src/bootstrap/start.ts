@@ -4,6 +4,7 @@ import { createSocket, isShutdownInProgress, unregisterShutdownTarget } from '..
 import { registerEvents } from '../events/register.js'
 import { initMysqlSchema } from '../core/db/init.js'
 import { config } from '../config/index.js'
+import { startAntiBanMetricsServer } from '../observability/antiban-metrics.js'
 
 let loggerRef: AppLogger | null = null
 const RECONNECT_MIN_DELAY_MS = Math.max(500, Number(process.env.WA_RECONNECT_MIN_DELAY_MS ?? 2500))
@@ -12,6 +13,7 @@ let reconnectPromise: Promise<void> | null = null
 let activeSocket: WASocket | null = null
 let socketGeneration = 0
 let lastReconnectAt = 0
+let metricsServerHandle: { stop: () => Promise<void> } | null = null
 
 const getLogger = (): AppLogger => {
   if (!loggerRef) {
@@ -120,5 +122,12 @@ const scheduleReconnect = async (reason: string) => {
  * Inicializa o MySQL (se configurado), cria o socket e registra eventos.
  */
 export async function start(): Promise<void> {
+  if (!metricsServerHandle && config.antibanEnabled && config.antibanMetricsEnabled) {
+    const logger = getLogger()
+    metricsServerHandle = startAntiBanMetricsServer({
+      logger,
+      getStats: () => (activeSocket as { antiban?: { getStats?: () => unknown } } | null)?.antiban?.getStats?.() ?? {},
+    })
+  }
   await scheduleReconnect('startup')
 }

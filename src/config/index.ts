@@ -172,6 +172,40 @@ export const config = {
   get antibanLidMaxEntries() {
     return readOptionalNumber(process.env.WA_ANTIBAN_LID_MAX_ENTRIES)
   },
+  /** Habilita detector de sessão surda (socket conectado sem eventos de mensagem). */
+  get antibanDeafSessionEnabled() {
+    return readBoolean(process.env.WA_ANTIBAN_DEAF_SESSION_ENABLED, true)
+  },
+  /** Timeout em ms sem atividade para considerar sessão "surda". */
+  get antibanDeafSessionTimeoutMs() {
+    return readNumber(process.env.WA_ANTIBAN_DEAF_SESSION_TIMEOUT_MS, 5 * 60_000)
+  },
+  /** Uptime mínimo em ms antes de começar a detectar sessão "surda". */
+  get antibanDeafSessionMinUptimeMs() {
+    return readNumber(process.env.WA_ANTIBAN_DEAF_SESSION_MIN_UPTIME_MS, 2 * 60_000)
+  },
+  /** Se o detector de sessão "surda" deve forçar auto-reconnect. */
+  get antibanDeafSessionAutoReconnect() {
+    return readBoolean(process.env.WA_ANTIBAN_DEAF_SESSION_AUTO_RECONNECT, true)
+  },
+  /** Habilita endpoint Prometheus /metrics para estatísticas do Anti-Ban. */
+  get antibanMetricsEnabled() {
+    return readBoolean(process.env.WA_ANTIBAN_METRICS_ENABLED, false)
+  },
+  /** Host de bind do servidor de métricas. */
+  get antibanMetricsHost() {
+    return process.env.WA_ANTIBAN_METRICS_HOST ?? '0.0.0.0'
+  },
+  /** Porta do servidor de métricas. */
+  get antibanMetricsPort() {
+    return readNumber(process.env.WA_ANTIBAN_METRICS_PORT, 9108)
+  },
+  /** Path HTTP para exposição das métricas. */
+  get antibanMetricsPath() {
+    const value = (process.env.WA_ANTIBAN_METRICS_PATH ?? '/metrics').trim()
+    if (!value) return '/metrics'
+    return value.startsWith('/') ? value : `/${value}`
+  },
   /** Se deve baixar automaticamente mídias recebidas para disco local (WA_MEDIA_AUTO_DOWNLOAD). */
   get mediaAutoDownload() {
     return readBoolean(process.env.WA_MEDIA_AUTO_DOWNLOAD, false)

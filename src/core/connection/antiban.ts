@@ -50,7 +50,7 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
     ...(config.antibanLidMaxEntries !== undefined ? { maxEntries: config.antibanLidMaxEntries } : {}),
   } as const
 
-  return {
+  const antiBanConfig: AntiBanConfig = {
     logging: config.antibanLogging,
     rateLimiter: buildRateLimiterConfig(),
     warmUp: buildWarmUpConfig(),
@@ -91,6 +91,27 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
       },
     },
   }
+
+  // Compatibilidade: algumas versões do pacote ainda não expõem `deafSession` na tipagem,
+  // embora o runtime aceite a opção.
+  if (config.antibanDeafSessionEnabled) {
+    ;(antiBanConfig as Record<string, unknown>).deafSession = {
+      timeoutMs: config.antibanDeafSessionTimeoutMs,
+      minUptimeMs: config.antibanDeafSessionMinUptimeMs,
+      autoReconnect: config.antibanDeafSessionAutoReconnect,
+      onDeafSession: (state: { silenceMs?: number; timeoutMs?: number; uptimeMs?: number; autoReconnect?: boolean }) => {
+        logger.warn('antiban detectou sessao possivelmente surda', {
+          connectionId,
+          silenceMs: state.silenceMs ?? null,
+          timeoutMs: state.timeoutMs ?? null,
+          uptimeMs: state.uptimeMs ?? null,
+          autoReconnect: state.autoReconnect ?? null,
+        })
+      },
+    }
+  }
+
+  return antiBanConfig
 }
 
 /**
