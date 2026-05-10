@@ -50,6 +50,7 @@ const readNumberEnv = (key: string, fallback: number, options: NumberEnvOptions 
 
 const BATCH_SIZE = readNumberEnv('WA_BACKFILL_BATCH_SIZE', 500)
 const WORKER_INTERVAL_MS = readNumberEnv('WA_BACKFILL_INTERVAL_MS', 30000, { min: 5000 })
+const MAX_PASSES_PER_CYCLE = readNumberEnv('WA_BACKFILL_MAX_PASSES', 20, { min: 1 })
 
 const logAffected = (label: string, result: ResultSetHeader) => {
   if (result.affectedRows) {
@@ -99,6 +100,22 @@ const toTinyInt = (value: boolean | null | undefined): number | null => {
   if (value === null || value === undefined) return null
   return value ? 1 : 0
 }
+
+type CheckpointStep = 'messages' | 'message_events' | 'events_log'
+
+const CHECKPOINT_TABLE = 'backfill_checkpoints'
+
+const BACKFILL_METRICS = [
+  { key: 'groups.owner_user_id', query: `SELECT COUNT(*) AS count FROM \`groups\` WHERE connection_id = ? AND owner_user_id IS NULL` },
+  { key: 'lid_mappings.user_id', query: `SELECT COUNT(*) AS count FROM lid_mappings WHERE connection_id = ? AND user_id IS NULL` },
+  { key: 'wa_contacts_cache.user_id', query: `SELECT COUNT(*) AS count FROM wa_contacts_cache WHERE connection_id = ? AND user_id IS NULL` },
+  { key: 'messages.sender_user_id', query: `SELECT COUNT(*) AS count FROM messages WHERE connection_id = ? AND sender_user_id IS NULL` },
+  { key: 'message_events.actor_user_id', query: `SELECT COUNT(*) AS count FROM message_events WHERE connection_id = ? AND actor_user_id IS NULL` },
+  { key: 'message_events.target_user_id', query: `SELECT COUNT(*) AS count FROM message_events WHERE connection_id = ? AND target_user_id IS NULL` },
+  { key: 'message_events.message_db_id', query: `SELECT COUNT(*) AS count FROM message_events WHERE connection_id = ? AND message_db_id IS NULL` },
+  { key: 'chat_users.role', query: `SELECT COUNT(*) AS count FROM chat_users WHERE connection_id = ? AND role IS NULL` },
+  { key: 'group_participants.role', query: `SELECT COUNT(*) AS count FROM group_participants WHERE connection_id = ? AND role IS NULL` },
+] as const
 
 const isSortMemoryError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false
@@ -157,6 +174,49 @@ async function main() {
 
   const connectionId = config.connectionId ?? 'default'
   logger.info('iniciando backfill worker', { connectionId, interval: WORKER_INTERVAL_MS })
+
+  await pool.execute(
+    `CREATE TABLE IF NOT EXISTS ${CHECKPOINT_TABLE} (
+       connection_id VARCHAR(128) NOT NULL,
+       step_name VARCHAR(64) NOT NULL,
+       last_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+       PRIMARY KEY (connection_id, step_name)
+     ) ENGINE=InnoDB`
+  )
+
+  type CheckpointRow = RowDataPacket & { last_id: number }
+  const getCheckpoint = async (step: CheckpointStep): Promise<number> => {
+    const [rows] = await pool.execute<CheckpointRow[]>(
+      `SELECT last_id
+       FROM ${CHECKPOINT_TABLE}
+       WHERE connection_id = ?
+         AND step_name = ?
+       LIMIT 1`,
+      [connectionId, step]
+    )
+    return Number(rows[0]?.last_id ?? 0)
+  }
+
+  const setCheckpoint = async (step: CheckpointStep, lastId: number) => {
+    await pool.execute(
+      `INSERT INTO ${CHECKPOINT_TABLE} (connection_id, step_name, last_id)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         last_id = GREATEST(last_id, VALUES(last_id))`,
+      [connectionId, step, Math.max(0, Math.trunc(lastId))]
+    )
+  }
+
+  const collectBackfillMetrics = async () => {
+    type CountRow = RowDataPacket & { count: number }
+    const snapshot: Record<string, number> = {}
+    for (const metric of BACKFILL_METRICS) {
+      const [rows] = await pool.execute<CountRow[]>(metric.query, [connectionId])
+      snapshot[metric.key] = Number(rows[0]?.count ?? 0)
+    }
+    return snapshot
+  }
 
   const resolveSelfJid = async (): Promise<string | null> => {
     type CredsRow = RowDataPacket & { creds_json: unknown }
@@ -821,15 +881,17 @@ async function main() {
   const backfillMessages = async () => {
     type IdRow = RowDataPacket & { id: number }
     let idRows: IdRow[] = []
+    const lastCheckpoint = await getCheckpoint('messages')
     try {
       const [rows] = await pool.query<IdRow[]>(
         `SELECT id
          FROM messages
          WHERE connection_id = ?
+           AND id > ?
            AND sender_user_id IS NULL
-         ORDER BY id DESC
+         ORDER BY id ASC
          LIMIT ${BATCH_SIZE}`,
-        [connectionId]
+        [connectionId, lastCheckpoint]
       )
       idRows = rows
     } catch (error) {
@@ -843,14 +905,19 @@ async function main() {
         `SELECT id
          FROM messages
          WHERE connection_id = ?
+           AND id > ?
            AND sender_user_id IS NULL
          LIMIT ${fallbackBatchSize}`,
-        [connectionId]
+        [connectionId, lastCheckpoint]
       )
       idRows = rows
     }
 
-    if (!idRows.length) return
+    if (!idRows.length) {
+      // Reinicia o cursor para revarrer registros antigos que possam ter ficado pendentes.
+      await setCheckpoint('messages', 0)
+      return
+    }
     const ids = idRows.map((row) => row.id)
 
     type MessageRow = RowDataPacket & {
@@ -867,7 +934,7 @@ async function main() {
        WHERE id IN (?)`,
       [ids]
     )
-    rows.sort((left, right) => right.id - left.id)
+    rows.sort((left, right) => left.id - right.id)
 
     for (const row of rows) {
       const message = deserialize<WAMessage>(row.data_json)
@@ -927,6 +994,8 @@ async function main() {
         }
       }
     }
+
+    await setCheckpoint('messages', ids[ids.length - 1] ?? lastCheckpoint)
   }
 
   const backfillMessageEvents = async () => {
@@ -953,19 +1022,26 @@ async function main() {
       message_db_id: number | null
       data_json: unknown
     }
+    const lastCheckpoint = await getCheckpoint('message_events')
     const [rows] = await pool.execute<MessageEventRow[]>(
       `SELECT id, chat_jid, message_id, actor_user_id, target_user_id, message_db_id, data_json
        FROM message_events
        WHERE connection_id = ?
+         AND id > ?
          AND (
            actor_user_id IS NULL
            OR target_user_id IS NULL
            OR message_db_id IS NULL
          )
-       ORDER BY id DESC
+       ORDER BY id ASC
        LIMIT ${BATCH_SIZE}`,
-      [connectionId]
+      [connectionId, lastCheckpoint]
     )
+
+    if (!rows.length) {
+      await setCheckpoint('message_events', 0)
+      return
+    }
 
     for (const row of rows) {
       const record = deserialize<Record<string, unknown>>(row.data_json)
@@ -990,6 +1066,8 @@ async function main() {
         [messageDbId, actorUserId ? 1 : 0, actorUserId, targetUserId ? 1 : 0, targetUserId, connectionId, row.id]
       )
     }
+
+    await setCheckpoint('message_events', rows[rows.length - 1]?.id ?? lastCheckpoint)
   }
 
   const backfillEventsLog = async () => {
@@ -1013,9 +1091,11 @@ async function main() {
 
     // Two-step fetch for events_log to avoid sort memory issues
     type IdRow = RowDataPacket & { id: number }
+    const lastCheckpoint = await getCheckpoint('events_log')
     const [idRows] = await pool.execute<IdRow[]>(
       `SELECT id FROM events_log
        WHERE connection_id = ?
+         AND id > ?
          AND (
            actor_user_id IS NULL
            OR target_user_id IS NULL
@@ -1023,11 +1103,14 @@ async function main() {
            OR group_jid IS NULL
            OR message_db_id IS NULL
          )
-       ORDER BY id DESC LIMIT ${BATCH_SIZE}`,
-      [connectionId]
+       ORDER BY id ASC LIMIT ${BATCH_SIZE}`,
+      [connectionId, lastCheckpoint]
     )
 
-    if (!idRows.length) return
+    if (!idRows.length) {
+      await setCheckpoint('events_log', 0)
+      return
+    }
     const ids = idRows.map(r => r.id)
 
     const [eventRows] = await pool.query<RowDataPacket[]>(
@@ -1080,6 +1163,8 @@ async function main() {
         [actorUserId ? 1 : 0, actorUserId, targetUserId ? 1 : 0, targetUserId, chatJid, groupJid ?? (chatJid?.endsWith('@g.us') ? chatJid : null), messageDbId, connectionId, row.id]
       )
     }
+
+    await setCheckpoint('events_log', idRows[idRows.length - 1]?.id ?? lastCheckpoint)
   }
 
   const backfillLabels = async () => {
@@ -1216,34 +1301,65 @@ async function main() {
   }
 
   async function runCycle() {
-    try {
-      await backfillUsersDisplayNames()
-      await backfillContactsDisplayNames()
-      await backfillLidMappings()
-      await backfillContactsUserId()
-      await backfillChats()
-      await backfillMessages()
-      await backfillMessageEvents()
-      await backfillGroupsAndParticipants()
-      await backfillChatUsersDirect()
-      await backfillLabels()
-      await backfillLabelAssociations()
-      await backfillBlocklist()
-      await backfillNewsletterEvents()
-      await backfillEventsLog()
-      
-      // Bulk Updates
-      const [msgUpdate] = await pool!.execute<ResultSetHeader>(
-        `UPDATE messages m 
-         INNER JOIN user_identifiers ui ON ui.id_value = m.chat_jid AND ui.connection_id = m.connection_id
-         SET m.sender_user_id = ui.user_id
-         WHERE m.connection_id = ? AND m.sender_user_id IS NULL AND m.from_me = 0 AND ui.id_type = 'jid'`,
-        [connectionId]
-      )
-      if (msgUpdate.affectedRows) logger.info('batch: sender_user_id atualizado', { affected: msgUpdate.affectedRows })
-    } catch (error) {
-      logger.error('erro no ciclo de backfill', { err: error })
+    const runStep = async (stepName: string, step: () => Promise<void>) => {
+      const startedAt = Date.now()
+      try {
+        await step()
+        logger.info('backfill step concluido', { step: stepName, durationMs: Date.now() - startedAt })
+      } catch (error) {
+        logger.error('backfill step com erro', { step: stepName, durationMs: Date.now() - startedAt, err: error })
+      }
     }
+
+    let pass = 0
+    let finalBefore: Record<string, number> | null = null
+    let finalAfter: Record<string, number> | null = null
+
+    while (pass < MAX_PASSES_PER_CYCLE) {
+      pass += 1
+      const before = await collectBackfillMetrics()
+      if (!finalBefore) finalBefore = before
+
+      await runStep('users_display_names', backfillUsersDisplayNames)
+      await runStep('contacts_display_names', backfillContactsDisplayNames)
+      await runStep('lid_mappings', backfillLidMappings)
+      await runStep('contacts_user_id', backfillContactsUserId)
+      await runStep('chats', backfillChats)
+      await runStep('messages', backfillMessages)
+      await runStep('message_events', backfillMessageEvents)
+      await runStep('groups_and_participants', backfillGroupsAndParticipants)
+      await runStep('chat_users_direct', backfillChatUsersDirect)
+      await runStep('labels', backfillLabels)
+      await runStep('label_associations', backfillLabelAssociations)
+      await runStep('blocklist', backfillBlocklist)
+      await runStep('newsletter_events', backfillNewsletterEvents)
+      await runStep('events_log', backfillEventsLog)
+      await runStep('messages_sender_bulk', async () => {
+        const [msgUpdate] = await pool!.execute<ResultSetHeader>(
+          `UPDATE messages m
+           INNER JOIN user_identifiers ui ON ui.id_value = m.chat_jid AND ui.connection_id = m.connection_id
+           SET m.sender_user_id = ui.user_id
+           WHERE m.connection_id = ? AND m.sender_user_id IS NULL AND m.from_me = 0 AND ui.id_type = 'jid'`,
+          [connectionId]
+        )
+        if (msgUpdate.affectedRows) logger.info('batch: sender_user_id atualizado', { affected: msgUpdate.affectedRows })
+      })
+
+      const after = await collectBackfillMetrics()
+      finalAfter = after
+      const progressed = Object.keys(after).some((key) => (before[key] ?? 0) > (after[key] ?? 0))
+      const pending = Object.values(after).reduce((sum, value) => sum + value, 0)
+
+      logger.info('backfill passe concluido', { connectionId, pass, pending, progressed })
+      if (!progressed || pending === 0) break
+    }
+
+    const before = finalBefore ?? (await collectBackfillMetrics())
+    const after = finalAfter ?? (await collectBackfillMetrics())
+    const deltas = Object.fromEntries(
+      Object.keys(after).map((key) => [key, { before: before[key] ?? 0, after: after[key] ?? 0, delta: (before[key] ?? 0) - (after[key] ?? 0) }])
+    )
+    logger.info('backfill ciclo concluido', { connectionId, passes: pass, deltas })
   }
 
   if (process.env.WA_BACKFILL_ONCE === 'true') {

@@ -91,12 +91,16 @@ npm run start:prod
 npm run pm2:start
 ```
 
+Ao iniciar via PM2, o sistema sobe dois processos:
+- `zyra`: bot principal.
+- `zyra-backfill`: worker contínuo de backfill de banco.
+
 Comandos úteis:
 
-- `npm run pm2:restart`: recompila e reinicia o processo `zyra`.
-- `npm run pm2:logs`: acompanha os logs do processo.
-- `npm run pm2:stop`: para a instância sem removê-la.
-- `npm run pm2:delete`: remove a instância do PM2.
+- `npm run pm2:restart`: recompila e reinicia os processos do ecossistema (`zyra` e `zyra-backfill`).
+- `npm run pm2:logs`: acompanha os logs de `zyra` e `zyra-backfill`.
+- `npm run pm2:stop`: para `zyra` e `zyra-backfill` sem remover.
+- `npm run pm2:delete`: remove `zyra` e `zyra-backfill` do PM2.
 - `npm run pm2:save`: salva a lista atual de processos para restauração automática.
 - `npm run pm2:startup`: gera o comando de inicialização automática do PM2 no boot do servidor.
 

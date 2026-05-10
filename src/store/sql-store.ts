@@ -27,8 +27,10 @@ const getStoreLogger = () => {
 }
 
 const LID_PN_CONFLICT_WINDOW_MS = 10 * 60 * 1000
+const LID_PN_REISOLATE_COOLDOWN_MS = 30 * 60 * 1000
 const lidPnPairLocks = new Map<string, Promise<void>>()
 const recentLidPnConflicts = new Map<string, { count: number; firstSeenAt: number; lastSeenAt: number }>()
+const recentLidPnIsolations = new Map<string, number>()
 
 const withLidPnPairLock = async <T>(pairKey: string, fn: () => Promise<T>): Promise<T> => {
   const previous = lidPnPairLocks.get(pairKey) ?? Promise.resolve()
@@ -64,6 +66,16 @@ const trackLidPnConflict = (pairKey: string): { firstInWindow: boolean; count: n
   existing.lastSeenAt = now
   recentLidPnConflicts.set(pairKey, existing)
   return { firstInWindow: false, count: existing.count, windowStartedAt: existing.firstSeenAt }
+}
+
+const shouldApplyLidPnIsolation = (pairKey: string): boolean => {
+  const now = Date.now()
+  const lastIsolationAt = recentLidPnIsolations.get(pairKey)
+  if (!lastIsolationAt || now - lastIsolationAt > LID_PN_REISOLATE_COOLDOWN_MS) {
+    recentLidPnIsolations.set(pairKey, now)
+    return true
+  }
+  return false
 }
 
 const MAX_LENGTHS = {
@@ -404,7 +416,31 @@ export function createSqlStore(connectionId?: string): SqlStore {
       [isolatedUserId, resolvedConnectionId, pn, lid]
     )
     await pool.execute(
-      `UPDATE group_participants
+      `DELETE gp
+       FROM group_participants gp
+       INNER JOIN group_participants existing
+         ON existing.connection_id = gp.connection_id
+        AND existing.group_jid = gp.group_jid
+        AND existing.user_id = UNHEX(REPLACE(?, '-', ''))
+       WHERE gp.connection_id = ?
+         AND gp.participant_jid = ?
+         AND existing.participant_jid <> gp.participant_jid`,
+      [isolatedUserId, resolvedConnectionId, lid]
+    )
+    await pool.execute(
+      `DELETE dup
+       FROM group_participants dup
+       INNER JOIN group_participants keep
+         ON keep.connection_id = dup.connection_id
+        AND keep.group_jid = dup.group_jid
+        AND keep.participant_jid = dup.participant_jid
+        AND HEX(keep.user_id) < HEX(dup.user_id)
+       WHERE dup.connection_id = ?
+         AND dup.participant_jid = ?`,
+      [resolvedConnectionId, lid]
+    )
+    await pool.execute(
+      `UPDATE IGNORE group_participants
        SET user_id = UNHEX(REPLACE(?, '-', ''))
        WHERE connection_id = ?
          AND participant_jid = ?`,
@@ -1302,9 +1338,39 @@ export function createSqlStore(connectionId?: string): SqlStore {
             const existingPnUserId = await lookupUserIdByIdentifier(pool, { type: 'pn', value: normalizedPn })
             const existingLidUserId = await lookupUserIdByIdentifier(pool, { type: 'lid', value: normalizedLid })
             if (existingPnUserId && existingLidUserId && existingPnUserId !== existingLidUserId) {
-              const isolatedUserId = await createIsolatedUserForPnLid(pool, normalizedPn, normalizedLid)
               const conflict = trackLidPnConflict(pairKey)
-              if (conflict.firstInWindow || conflict.count % 5 === 0) {
+              const shouldIsolate = shouldApplyLidPnIsolation(pairKey)
+              if (!shouldIsolate) {
+                if (conflict.firstInWindow) {
+                  getStoreLogger().warn('conflito de identidade PN/LID detectado; isolamento suprimido por cooldown', {
+                    connectionId: resolvedConnectionId,
+                    pn: normalizedPn,
+                    lid: normalizedLid,
+                    existingPnUserId,
+                    existingLidUserId,
+                    conflictCountInWindow: conflict.count,
+                    conflictWindowStartedAt: new Date(conflict.windowStartedAt).toISOString(),
+                    reIsolateCooldownMs: LID_PN_REISOLATE_COOLDOWN_MS,
+                  })
+                }
+                await pool.execute(
+                  `INSERT INTO lid_mappings (
+                     connection_id,
+                     pn,
+                     lid,
+                     user_id
+                   )
+                   VALUES (?, ?, ?, UNHEX(REPLACE(?, '-', '')))
+                   ON DUPLICATE KEY UPDATE
+                     lid = VALUES(lid),
+                     user_id = VALUES(user_id)`,
+                  [resolvedConnectionId, normalizedPn, normalizedLid, existingLidUserId]
+                )
+                return
+              }
+
+              const isolatedUserId = await createIsolatedUserForPnLid(pool, normalizedPn, normalizedLid)
+              if (conflict.firstInWindow) {
                 getStoreLogger().warn('conflito de identidade PN/LID detectado; isolamento aplicado', {
                   connectionId: resolvedConnectionId,
                   pn: normalizedPn,
