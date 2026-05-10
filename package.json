@@ -1,6 +1,6 @@
 {
   "name": "zyra",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "license": "MIT",
   "type": "module",
@@ -35,9 +35,9 @@
     "baileys-antiban": "github:kobie3717/baileys-antiban#master",
     "dotenv": "^16.4.5",
     "fflate": "^0.8.2",
-    "link-preview-js": "^3.2.0",
+    "link-preview-js": "4.0.1",
     "mysql2": "^3.20.0",
-    "pm2": "^6.0.14",
+    "pm2": "^7.0.1",
     "qrcode-terminal": "^0.12.0",
     "redis": "^4.6.13"
   },
@@ -61,6 +61,7 @@
     },
     "@whiskeysockets/libsignal-node": {
       "protobufjs": "7.5.5"
-    }
+    },
+    "link-preview-js": "4.0.1"
   }
 }
