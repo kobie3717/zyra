@@ -198,7 +198,7 @@ const executeStickerCommand: Command['execute'] = async (ctx) => {
     try {
       await ctx.reply(text)
     } catch {
-      // Evita quebrar o comando quando o antiban bloqueia a própria resposta de erro.
+      // Evita quebrar o comando quando houver falha até após retentativas globais.
     }
   }
 

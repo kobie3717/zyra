@@ -17,6 +17,9 @@ const ANSI_MAGENTA = '\x1b[35m'
 const ANSI_GRAY = '\x1b[90m'
 const ANSI_RED = '\x1b[31m'
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
+const ANTIBAN_BLOCKED_MESSAGE = '[baileys-antiban] Message blocked'
+const ANTIBAN_SEND_MAX_ATTEMPTS = 3
+const ANTIBAN_SEND_BASE_DELAY_MS = 2_000
 const LINK_PATTERN =
   /\b(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/i
 const LINK_EXTRACT_PATTERN =
@@ -123,6 +126,15 @@ const getErrorStatusCode = (error: unknown): number | null => {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
 }
 
+const isAntiBanBlockedError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false
+  return error.message.includes(ANTIBAN_BLOCKED_MESSAGE)
+}
+
+const wait = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /**
  * Coleta menções e autor citado para comandos que operam em participantes.
  * @param message Mensagem recebida.
@@ -140,6 +152,13 @@ const extractTargetHintsFromMessage = (message: proto.IWebMessageInfo): { mentio
   const quotedSender = contextInfo?.participant ?? null
 
   return { mentionedJids, quotedSender }
+}
+
+const extractQuotedStanzaIdFromMessage = (message: proto.IWebMessageInfo): string | null => {
+  const { content, type } = getNormalizedMessage(message)
+  if (!content || !type) return null
+  const node = (content as Record<string, unknown>)[type] as { contextInfo?: proto.IContextInfo } | null | undefined
+  return node?.contextInfo?.stanzaId ?? null
 }
 
 /**
@@ -220,7 +239,13 @@ const logIncomingMessage = async (context: IncomingCommandEnvelope, logger: AppL
  * @param logger Logger para telemetria de falhas de envio.
  * @returns Contexto pronto para execução de comandos.
  */
-const createRuntimeContext = (context: IncomingCommandEnvelope, logger: AppLogger, sqlStore: SqlStore): CommandContext => {
+const createRuntimeContext = (
+  context: IncomingCommandEnvelope,
+  logger: AppLogger,
+  sqlStore: SqlStore,
+  getRecentStickerMessage: (chatId: string) => WAMessage | null,
+  getRecentMessageById: (chatId: string, messageId: string) => WAMessage | null
+): CommandContext => {
   const admin = createCommandAdminActions({
     sock: context.sock,
     chatId: context.chatId,
@@ -231,22 +256,38 @@ const createRuntimeContext = (context: IncomingCommandEnvelope, logger: AppLogge
   const send = async (content: Parameters<CommandContext['send']>[0], options?: CommandSendOptions) => {
     const { quote = true, ...sendOptions } = options ?? {}
     const finalOptions = quote ? { quoted: context.message, ...sendOptions } : sendOptions
-    try {
-      return await context.sock.sendMessage(context.chatId, content, finalOptions)
-    } catch (error) {
-      const statusCode = getErrorStatusCode(error)
-      if (statusCode === REACHOUT_TIMELOCK_STATUS_CODE) {
-        logger.error('alerta de envio com restricao de conta (463)', {
-          statusCode,
+    for (let attempt = 1; attempt <= ANTIBAN_SEND_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await context.sock.sendMessage(context.chatId, content, finalOptions)
+      } catch (error) {
+        const statusCode = getErrorStatusCode(error)
+        if (statusCode === REACHOUT_TIMELOCK_STATUS_CODE) {
+          logger.error('alerta de envio com restricao de conta (463)', {
+            statusCode,
+            chatId: context.chatId,
+            sender: context.sender,
+            commandName: context.commandName,
+            recommendation: 'evite reachout para novos contatos e valide timelock/tctoken da conta',
+            err: error,
+          })
+        }
+        if (!isAntiBanBlockedError(error) || attempt === ANTIBAN_SEND_MAX_ATTEMPTS) {
+          throw error
+        }
+        const retryWindowMs = config.antibanIdenticalMessageWindowMs ?? 12_000
+        const retryDelayMs = Math.max(retryWindowMs, ANTIBAN_SEND_BASE_DELAY_MS * attempt)
+        logger.warn('envio bloqueado pelo antiban, aplicando retentativa', {
           chatId: context.chatId,
           sender: context.sender,
           commandName: context.commandName,
-          recommendation: 'evite reachout para novos contatos e valide timelock/tctoken da conta',
-          err: error,
+          attempt,
+          maxAttempts: ANTIBAN_SEND_MAX_ATTEMPTS,
+          retryDelayMs,
         })
+        await wait(retryDelayMs)
       }
-      throw error
     }
+    return undefined
   }
 
   return new CommandContext({
@@ -273,7 +314,21 @@ const createRuntimeContext = (context: IncomingCommandEnvelope, logger: AppLogge
         { quote: false }
       )
     },
-    resolveStickerSourceMedia: async () => resolveStickerSourceMediaFromMessage(context.message),
+    resolveStickerSourceMedia: async () => {
+      const directSource = await resolveStickerSourceMediaFromMessage(context.message)
+      if (directSource) return directSource
+      const quotedStanzaId = extractQuotedStanzaIdFromMessage(context.message)
+      if (quotedStanzaId) {
+        const quotedMessage = getRecentMessageById(context.chatId, quotedStanzaId)
+        if (quotedMessage) {
+          const quotedSource = await resolveStickerSourceMediaFromMessage(quotedMessage)
+          if (quotedSource) return quotedSource
+        }
+      }
+      const fallbackMessage = getRecentStickerMessage(context.chatId)
+      if (!fallbackMessage) return null
+      return resolveStickerSourceMediaFromMessage(fallbackMessage)
+    },
     saveStickerTemplate: async (templateText) => {
       if (!sqlStore.enabled) return
       await sqlStore.setUserStickerTemplate({ userJid: context.sender, templateText })
@@ -348,6 +403,8 @@ export type CommandProcessor = {
  */
 export function createCommandProcessor({ logger, sqlStore }: CreateCommandProcessorOptions): CommandProcessor {
   const recentMessagesBySender = new Map<string, proto.IMessageKey[]>()
+  const recentStickerMessagesByChat = new Map<string, WAMessage[]>()
+  const recentMessagesByChat = new Map<string, WAMessage[]>()
 
   const normalizeParticipantId = (jid: string): string => {
     const normalized = jid.trim().toLowerCase()
@@ -377,6 +434,37 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
     })
     const lastFive = current.slice(-5)
     recentMessagesBySender.set(senderKey, lastFive)
+  }
+
+  const trackRecentStickerMessage = (context: IncomingCommandEnvelope): void => {
+    const { type: messageType } = getNormalizedMessage(context.message)
+    if (messageType !== 'stickerMessage') return
+    const list = recentStickerMessagesByChat.get(context.chatId) ?? []
+    list.push(context.message)
+    recentStickerMessagesByChat.set(context.chatId, list.slice(-8))
+  }
+
+  const trackRecentChatMessage = (context: IncomingCommandEnvelope): void => {
+    if (!context.message?.key?.id) return
+    const list = recentMessagesByChat.get(context.chatId) ?? []
+    list.push(context.message)
+    recentMessagesByChat.set(context.chatId, list.slice(-200))
+  }
+
+  const getRecentStickerMessage = (chatId: string): WAMessage | null => {
+    const list = recentStickerMessagesByChat.get(chatId)
+    if (!list?.length) return null
+    return list[list.length - 1] ?? null
+  }
+
+  const getRecentMessageById = (chatId: string, messageId: string): WAMessage | null => {
+    const list = recentMessagesByChat.get(chatId)
+    if (!list?.length) return null
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const candidate = list[index]
+      if (candidate?.key?.id === messageId) return candidate
+    }
+    return null
   }
 
   const deleteRecentMessagesFromSender = async (context: IncomingCommandEnvelope): Promise<{ deleted: number; total: number }> => {
@@ -568,6 +656,8 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
 
       await logIncomingMessage(context, logger)
       trackRecentSenderMessage(context)
+      trackRecentStickerMessage(context)
+      trackRecentChatMessage(context)
       try {
         await enforceAntilink(context)
       } catch (error) {
@@ -581,7 +671,7 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
 
       const startedAt = Date.now()
       let success = true
-      const cmdCtx = createRuntimeContext(context, logger, sqlStore)
+      const cmdCtx = createRuntimeContext(context, logger, sqlStore, getRecentStickerMessage, getRecentMessageById)
 
       try {
         await command.execute(cmdCtx)
