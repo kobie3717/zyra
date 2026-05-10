@@ -87,12 +87,16 @@ describe('antiban helper', () => {
       sock,
       expect.objectContaining({
         logging: false,
-        rateLimiter: expect.objectContaining({
-          maxPerMinute: 8,
-          maxIdenticalMessages: 200,
-          identicalMessageWindowMs: 60000,
-          burstAllowance: 20,
-        }),
+        maxPerMinute: 8,
+        maxPerHour: 200,
+        maxPerDay: 1500,
+        maxIdenticalMessages: 200,
+        identicalMessageWindowMs: 60000,
+        burstAllowance: 20,
+        warmUpDays: 7,
+        day1Limit: 20,
+        growthFactor: 1.8,
+        inactivityThresholdHours: 72,
         lidResolver: expect.objectContaining({ canonical: 'pn', maxEntries: 10000 }),
         jidCanonicalizer: expect.objectContaining({
           enabled: true,
