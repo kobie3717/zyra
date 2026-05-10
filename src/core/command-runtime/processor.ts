@@ -16,8 +16,32 @@ const ANSI_GREEN = '\x1b[32m'
 const ANSI_MAGENTA = '\x1b[35m'
 const ANSI_GRAY = '\x1b[90m'
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
-const LINK_PATTERN = /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)\S+/i
-const LINK_EXTRACT_PATTERN = /((?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)\S+)/gi
+const LINK_PATTERN =
+  /\b(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/i
+const LINK_EXTRACT_PATTERN =
+  /(?<!@)\b(?:https?:\/\/[^\s<>"'`]+|ftp:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+|chat\.whatsapp\.com\/[^\s<>"'`]+|wa\.me\/[^\s<>"'`]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/gi
+const NON_LINK_FILE_EXTENSIONS = new Set([
+  'json',
+  'txt',
+  'md',
+  'log',
+  'csv',
+  'xml',
+  'yaml',
+  'yml',
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'zip',
+  'rar',
+  '7z',
+  'tar',
+  'gz',
+])
 const MEDIA_TYPES = new Set([
   'imageMessage',
   'videoMessage',
@@ -388,8 +412,29 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
   }
 
   const extractLinks = (text: string): string[] => {
-    const matches = text.match(LINK_EXTRACT_PATTERN) ?? []
-    return matches.map((entry) => entry.trim()).filter(Boolean)
+    const matches = Array.from(text.matchAll(LINK_EXTRACT_PATTERN))
+    return matches
+      .map((match) => {
+        const entry = (match[0] ?? '').trim().replace(/[)\],.!?;:]+$/g, '')
+        const index = match.index ?? 0
+        const previousChar = index > 0 ? text[index - 1] : ''
+        const startsAsExplicitUrl = /^(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)/i.test(entry)
+        return { entry, previousChar, startsAsExplicitUrl }
+      })
+      .filter(({ entry, previousChar, startsAsExplicitUrl }) => {
+        if (!entry) return false
+        if (!startsAsExplicitUrl && /[@._%+-]/.test(previousChar)) return false
+        return true
+      })
+      .map(({ entry }) => entry)
+      .filter((entry) => {
+        if (/^(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)/i.test(entry)) return true
+        const [host] = entry.split('/')
+        const parts = host.toLowerCase().split('.')
+        const tld = parts[parts.length - 1]
+        return !NON_LINK_FILE_EXTENSIONS.has(tld)
+      })
+      .filter(Boolean)
   }
 
   const normalizeLinkToUrl = (link: string): URL | null => {
