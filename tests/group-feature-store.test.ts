@@ -58,7 +58,7 @@ describe('groupFeatureStore', () => {
     expect(fallback).toContain('"antilink": true')
   })
 
-  it('carrega de redis antes de fallback e nao consulta sql quando encontrou cache distribuido', async () => {
+  it('consulta sql primeiro e usa redis como fallback quando sql nao tiver estado', async () => {
     mockRedisClient.hGet.mockResolvedValue(JSON.stringify({ antilink: true, antilinkAllowedDomains: ['exemplo.com'] }))
 
     const { groupFeatureStore } = await import('../src/store/group-feature-store.ts')
@@ -67,6 +67,6 @@ describe('groupFeatureStore', () => {
 
     expect(enabled).toBe(true)
     expect(domains).toEqual(['exemplo.com'])
-    expect(mockPool.execute).not.toHaveBeenCalled()
+    expect(mockPool.execute).toHaveBeenCalled()
   })
 })

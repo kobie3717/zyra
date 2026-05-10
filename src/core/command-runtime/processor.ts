@@ -15,6 +15,7 @@ const ANSI_CYAN = '\x1b[36m'
 const ANSI_GREEN = '\x1b[32m'
 const ANSI_MAGENTA = '\x1b[35m'
 const ANSI_GRAY = '\x1b[90m'
+const ANSI_RED = '\x1b[31m'
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
 const LINK_PATTERN =
   /\b(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/i
@@ -42,6 +43,7 @@ const NON_LINK_FILE_EXTENSIONS = new Set([
   'tar',
   'gz',
 ])
+const INTERNAL_WHATSAPP_HOSTS = new Set(['whatsapp.net', 'cdn.whatsapp.net'])
 const MEDIA_TYPES = new Set([
   'imageMessage',
   'videoMessage',
@@ -192,6 +194,7 @@ const logIncomingMessage = async (context: IncomingCommandEnvelope, logger: AppL
   const text = context.text.length > 200 ? `${context.text.slice(0, 200)}...` : context.text || null
   const compactText = text ? text.replace(/\s+/g, ' ').trim() : null
   const hasMedia = messageType ? MEDIA_TYPES.has(messageType) : false
+  const hasLink = Boolean(context.text && LINK_PATTERN.test(context.text))
   const logParts = [
     `chatId=${context.chatId}`,
     `messageId=${messageKey.id ?? ''}`,
@@ -202,11 +205,12 @@ const logIncomingMessage = async (context: IncomingCommandEnvelope, logger: AppL
     `messageType=${messageType ? colorize(messageType, ANSI_MAGENTA) : ''}`,
     `hasMedia=${hasMedia}`,
     `text=${compactText ? JSON.stringify(compactText) : ''}`,
+    `hasLink=${colorize(String(hasLink), hasLink ? ANSI_RED : ANSI_GRAY)}`,
     `isCommand=${colorize(String(Boolean(context.commandName)), context.commandName ? ANSI_GREEN : ANSI_GRAY)}`,
     `commandName=${context.commandName ? colorize(context.commandName, ANSI_CYAN) : ''}`,
     `timestamp=${timestampIso ?? ''}`,
   ]
-  const title = colorize('mensagem recebida', `${ANSI_BOLD}${ANSI_CYAN}`)
+  const title = colorize('mensagem recebida', `${ANSI_BOLD}${hasLink ? ANSI_RED : ANSI_CYAN}`)
   logger.info(`\n\n${title} | ${logParts.join(' ')}`)
 }
 
@@ -353,6 +357,12 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
     return `${baseUser}@${domain}`
   }
 
+  const toUserKey = (jid: string): string => {
+    const normalized = normalizeParticipantId(jid)
+    const [user] = normalized.split('@')
+    return user ?? normalized
+  }
+
   const trackRecentSenderMessage = (context: IncomingCommandEnvelope): void => {
     if (!context.isGroup) return
     const key = context.message.key
@@ -458,22 +468,35 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
     return firstPathSegment
   }
 
+  const isInternalWhatsAppLink = (url: URL): boolean => {
+    const host = url.hostname.toLowerCase()
+    if (host === 'chat.whatsapp.com' || host === 'wa.me') return false
+    return host === 'whatsapp.net' || host.endsWith('.whatsapp.net') || INTERNAL_WHATSAPP_HOSTS.has(host)
+  }
+
   const enforceAntilink = async (context: IncomingCommandEnvelope): Promise<void> => {
     if (!context.isGroup) return
     if (!context.text || !LINK_PATTERN.test(context.text)) return
 
     const enabled = await groupFeatureStore.isAntilinkEnabled(context.chatId)
-    if (!enabled) return
+    if (!enabled) {
+      logger.info('antilink ignorado: desativado no grupo', { chatId: context.chatId })
+      return
+    }
     const links = extractLinks(context.text)
     if (!links.length) return
+    const { type: messageType } = getNormalizedMessage(context.message)
     const allowedDomains = await groupFeatureStore.getAntilinkAllowedDomains(context.chatId)
     const allowOwnInvite = await groupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled(context.chatId)
 
     let ownInviteCode: string | null = null
+    let foundExternalLink = false
     const shouldAllowMessage = async (): Promise<boolean> => {
       for (const link of links) {
         const url = normalizeLinkToUrl(link)
         if (!url) return false
+        if (isInternalWhatsAppLink(url)) continue
+        foundExternalLink = true
         if (isAllowedByDomain(url, allowedDomains)) continue
         if (!allowOwnInvite) return false
 
@@ -487,21 +510,46 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
       return true
     }
 
-    if (await shouldAllowMessage()) return
+    if (await shouldAllowMessage()) {
+      logger.info('antilink: mensagem permitida por whitelist/invite', { chatId: context.chatId, sender: context.sender, links })
+      return
+    }
+
+    if (messageType === 'stickerMessage' && !foundExternalLink) {
+      logger.info('antilink ignorado: sticker com link interno do WhatsApp', {
+        chatId: context.chatId,
+        sender: context.sender,
+      })
+      return
+    }
 
     const metadata = await context.sock.groupMetadata(context.chatId)
     const sender = normalizeParticipantId(context.sender)
     const botJid = normalizeParticipantId(context.sock.user?.id ?? '')
     const participantById = new Map(metadata.participants.map((participant) => [normalizeParticipantId(participant.id), participant]))
-    const senderParticipant = participantById.get(sender)
-    const botParticipant = participantById.get(botJid)
+    const participantByUserKey = new Map(metadata.participants.map((participant) => [toUserKey(participant.id), participant]))
+    const senderParticipant = participantById.get(sender) ?? participantByUserKey.get(toUserKey(sender))
+    const botParticipant = participantById.get(botJid) ?? participantByUserKey.get(toUserKey(botJid))
 
     const senderIsAdmin = Boolean(senderParticipant && (senderParticipant.admin === 'admin' || senderParticipant.admin === 'superadmin'))
     const botIsAdmin = Boolean(botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin'))
 
-    if (senderIsAdmin || !botIsAdmin) return
-
-    await context.sock.groupParticipantsUpdate(context.chatId, [context.sender], 'remove')
+    if (senderIsAdmin) {
+      logger.info('antilink ignorado: remetente admin', { chatId: context.chatId, sender: context.sender, links })
+      return
+    }
+    try {
+      await context.sock.groupParticipantsUpdate(context.chatId, [context.sender], 'remove')
+    } catch (error) {
+      logger.warn('antilink não aplicado: falha ao remover participante', {
+        chatId: context.chatId,
+        botJid,
+        sender: context.sender,
+        links,
+        err: error,
+      })
+      return
+    }
     const { deleted, total } = await deleteRecentMessagesFromSender(context)
     await context.sock.sendMessage(context.chatId, {
       text: `🚫 ${context.message.pushName ?? 'Usuário'} removido por enviar link (antilink ativo).\n🧹 Mensagens apagadas: ${deleted}/${total}.`,

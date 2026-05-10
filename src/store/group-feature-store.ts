@@ -165,19 +165,19 @@ class GroupFeatureStore {
     const cached = this.#cache.get(groupJid)
     if (cached) return cached
 
-    const fromRedis = await this.#loadStateFromRedis(groupJid)
-    if (fromRedis) {
-      this.#cache.set(groupJid, fromRedis)
-      this.#data[groupJid] = fromRedis
-      return fromRedis
-    }
-
     const fromSql = await this.#loadStateFromSql(groupJid)
     if (fromSql) {
       this.#cache.set(groupJid, fromSql)
       this.#data[groupJid] = fromSql
       await this.#saveStateToRedis(groupJid, fromSql)
       return fromSql
+    }
+
+    const fromRedis = await this.#loadStateFromRedis(groupJid)
+    if (fromRedis) {
+      this.#cache.set(groupJid, fromRedis)
+      this.#data[groupJid] = fromRedis
+      return fromRedis
     }
 
     await this.#load()

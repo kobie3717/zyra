@@ -20,6 +20,7 @@
     "db:verify": "tsx src/core/db/verify.ts",
     "db:delete-session": "tsx src/core/db/delete-session.ts",
     "db:backfill": "tsx src/core/db/backfill.ts",
+    "db:repair-group-participants": "tsx src/core/db/repair-group-participants.ts",
     "db:nulls": "tsx src/core/db/null-report.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && vitest --run --typecheck",
     "lint": "eslint .",

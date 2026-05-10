@@ -285,9 +285,6 @@ export function createSqlStore(connectionId?: string): SqlStore {
       case 'jid': {
         const jid = normalizeJid(entry.value)
         if (!jid) return null
-        if (jid.endsWith('@lid')) {
-          return { type: 'lid', value: jid }
-        }
         return { type: entry.type, value: jid }
       }
       case 'pn':
@@ -309,6 +306,71 @@ export function createSqlStore(connectionId?: string): SqlStore {
       return [entry, { type: 'jid', value: entry.value }]
     }
     return [entry]
+  }
+
+  const lookupUserIdByIdentifier = async (
+    pool: NonNullable<ReturnType<typeof getMysqlPool>>,
+    entry: { type: UserIdentifierType; value: string }
+  ): Promise<string | null> => {
+    const normalized = normalizeUserIdentifier(entry)
+    if (!normalized) return null
+    type UserRow = RowDataPacket & { user_id: string }
+    const [rows] = await pool.execute<UserRow[]>(
+      `SELECT LOWER(CONCAT(HEX(SUBSTR(user_id, 1, 4)),'-',HEX(SUBSTR(user_id, 5, 2)),'-',HEX(SUBSTR(user_id, 7, 2)),'-',HEX(SUBSTR(user_id, 9, 2)),'-',HEX(SUBSTR(user_id, 11, 6)))) AS user_id
+       FROM user_identifiers
+       WHERE connection_id = ?
+         AND id_type = ?
+         AND id_value = ?
+       LIMIT 1`,
+      [resolvedConnectionId, normalized.type, normalized.value]
+    )
+    return rows[0]?.user_id ?? null
+  }
+
+  const createIsolatedUserForPnLid = async (
+    pool: NonNullable<ReturnType<typeof getMysqlPool>>,
+    pn: string,
+    lid: string
+  ): Promise<string> => {
+    const isolatedUserId = randomUUID()
+    await pool.execute(
+      `INSERT INTO users (id, connection_id, display_name)
+       VALUES (UNHEX(REPLACE(?, '-', '')), ?, NULL)`,
+      [isolatedUserId, resolvedConnectionId]
+    )
+    await pool.execute(
+      `INSERT INTO user_identifiers (connection_id, user_id, id_type, id_value)
+       VALUES (?, UNHEX(REPLACE(?, '-', '')), 'pn', ?)
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)`,
+      [resolvedConnectionId, isolatedUserId, pn]
+    )
+    await pool.execute(
+      `INSERT INTO user_identifiers (connection_id, user_id, id_type, id_value)
+       VALUES (?, UNHEX(REPLACE(?, '-', '')), 'lid', ?)
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)`,
+      [resolvedConnectionId, isolatedUserId, lid]
+    )
+    await pool.execute(
+      `INSERT INTO user_identifiers (connection_id, user_id, id_type, id_value)
+       VALUES (?, UNHEX(REPLACE(?, '-', '')), 'jid', ?)
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)`,
+      [resolvedConnectionId, isolatedUserId, lid]
+    )
+    await pool.execute(
+      `UPDATE lid_mappings
+       SET user_id = UNHEX(REPLACE(?, '-', ''))
+       WHERE connection_id = ?
+         AND (pn = ? OR lid = ?)`,
+      [isolatedUserId, resolvedConnectionId, pn, lid]
+    )
+    await pool.execute(
+      `UPDATE group_participants
+       SET user_id = UNHEX(REPLACE(?, '-', ''))
+       WHERE connection_id = ?
+         AND participant_jid = ?`,
+      [isolatedUserId, resolvedConnectionId, lid]
+    )
+    return isolatedUserId
   }
 
   const resolveUserIdentifierEntries = (value: string | null | undefined): Array<{ type: UserIdentifierType; value: string }> => {
@@ -1195,6 +1257,35 @@ export function createSqlStore(connectionId?: string): SqlStore {
           const normalizedPn = normalizePnLid(pn)
           const normalizedLid = normalizePnLid(lid)
           if (!normalizedPn || !normalizedLid) return
+
+          const existingPnUserId = await lookupUserIdByIdentifier(pool, { type: 'pn', value: normalizedPn })
+          const existingLidUserId = await lookupUserIdByIdentifier(pool, { type: 'lid', value: normalizedLid })
+          if (existingPnUserId && existingLidUserId && existingPnUserId !== existingLidUserId) {
+            const isolatedUserId = await createIsolatedUserForPnLid(pool, normalizedPn, normalizedLid)
+            getStoreLogger().warn('conflito de identidade PN/LID detectado; isolamento aplicado', {
+              connectionId: resolvedConnectionId,
+              pn: normalizedPn,
+              lid: normalizedLid,
+              existingPnUserId,
+              existingLidUserId,
+              isolatedUserId,
+            })
+            await pool.execute(
+              `INSERT INTO lid_mappings (
+                 connection_id,
+                 pn,
+                 lid,
+                 user_id
+               )
+               VALUES (?, ?, ?, UNHEX(REPLACE(?, '-', '')))
+               ON DUPLICATE KEY UPDATE
+                 lid = VALUES(lid),
+                 user_id = VALUES(user_id)`,
+              [resolvedConnectionId, normalizedPn, normalizedLid, isolatedUserId]
+            )
+            return
+          }
+
           let userId: string | null = null
           if (normalizedPn || normalizedLid) {
             const identifiers: Array<{ type: UserIdentifierType; value: string }> = []
