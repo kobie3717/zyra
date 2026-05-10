@@ -30,6 +30,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@caed0/webp-conv": "^2.2.3",
     "@hapi/boom": "^10.0.1",
     "@kaikybrofc/logger-module": "^1.0.4",
     "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#v7.0.0-rc10",
