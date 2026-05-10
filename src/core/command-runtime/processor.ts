@@ -7,6 +7,7 @@ import { getMessageText, getNormalizedMessage } from '../../utils/message.js'
 import { resolveStickerSourceMedia as resolveStickerSourceMediaFromMessage } from '../../utils/sticker.js'
 import { createCommandAdminActions } from './admin.js'
 import { CommandContext, type CommandSendOptions } from './context.js'
+import { groupFeatureStore } from '../../store/group-feature-store.js'
 
 const ANSI_RESET = '\x1b[0m'
 const ANSI_BOLD = '\x1b[1m'
@@ -15,6 +16,8 @@ const ANSI_GREEN = '\x1b[32m'
 const ANSI_MAGENTA = '\x1b[35m'
 const ANSI_GRAY = '\x1b[90m'
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
+const LINK_PATTERN = /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)\S+/i
+const LINK_EXTRACT_PATTERN = /((?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)\S+)/gi
 const MEDIA_TYPES = new Set([
   'imageMessage',
   'videoMessage',
@@ -316,6 +319,150 @@ export type CommandProcessor = {
  * @returns Um objeto CommandProcessor.
  */
 export function createCommandProcessor({ logger, sqlStore }: CreateCommandProcessorOptions): CommandProcessor {
+  const recentMessagesBySender = new Map<string, proto.IMessageKey[]>()
+
+  const normalizeParticipantId = (jid: string): string => {
+    const normalized = jid.trim().toLowerCase()
+    const [user, domain] = normalized.split('@')
+    if (!user || !domain) return normalized
+    const baseUser = user.split(':')[0] ?? user
+    return `${baseUser}@${domain}`
+  }
+
+  const trackRecentSenderMessage = (context: IncomingCommandEnvelope): void => {
+    if (!context.isGroup) return
+    const key = context.message.key
+    if (!key?.id || !key.remoteJid || !key.participant || key.fromMe) return
+    const senderKey = `${context.chatId}|${normalizeParticipantId(context.sender)}`
+    const current = recentMessagesBySender.get(senderKey) ?? []
+    current.push({
+      id: key.id,
+      remoteJid: key.remoteJid,
+      participant: key.participant,
+      fromMe: Boolean(key.fromMe),
+    })
+    const lastFive = current.slice(-5)
+    recentMessagesBySender.set(senderKey, lastFive)
+  }
+
+  const deleteRecentMessagesFromSender = async (context: IncomingCommandEnvelope): Promise<{ deleted: number; total: number }> => {
+    const senderKey = `${context.chatId}|${normalizeParticipantId(context.sender)}`
+    const recentKeys = [...(recentMessagesBySender.get(senderKey) ?? [])]
+    if (!recentKeys.length) return { deleted: 0, total: 0 }
+
+    const firstPass = await Promise.allSettled(
+      recentKeys.map(async (key) => {
+        await context.sock.sendMessage(context.chatId, { delete: key })
+      })
+    )
+
+    const failedIndexes: number[] = []
+    let deleted = 0
+    for (let index = 0; index < firstPass.length; index += 1) {
+      if (firstPass[index]?.status === 'fulfilled') {
+        deleted += 1
+      } else {
+        failedIndexes.push(index)
+      }
+    }
+
+    // Revalidação: tenta novamente os deletes que falharam na primeira passagem.
+    for (const index of failedIndexes) {
+      const key = recentKeys[index]
+      if (!key) continue
+      try {
+        await context.sock.sendMessage(context.chatId, { delete: key })
+        deleted += 1
+      } catch (error) {
+        logger.warn('falha ao revalidar delete de mensagem no antilink', {
+          chatId: context.chatId,
+          sender: context.sender,
+          messageId: key.id ?? null,
+          err: error,
+        })
+      }
+    }
+
+    recentMessagesBySender.delete(senderKey)
+    return { deleted, total: recentKeys.length }
+  }
+
+  const extractLinks = (text: string): string[] => {
+    const matches = text.match(LINK_EXTRACT_PATTERN) ?? []
+    return matches.map((entry) => entry.trim()).filter(Boolean)
+  }
+
+  const normalizeLinkToUrl = (link: string): URL | null => {
+    const normalized = link.startsWith('http://') || link.startsWith('https://') ? link : `https://${link}`
+    try {
+      return new URL(normalized)
+    } catch {
+      return null
+    }
+  }
+
+  const isAllowedByDomain = (url: URL, allowedDomains: string[]): boolean => {
+    const host = url.hostname.toLowerCase()
+    return allowedDomains.some((domain) => host === domain || host.endsWith(`.${domain}`))
+  }
+
+  const extractInviteCode = (url: URL): string | null => {
+    if (url.hostname.toLowerCase() !== 'chat.whatsapp.com') return null
+    const firstPathSegment = url.pathname.replace(/^\/+/, '').split('/')[0]
+    if (!firstPathSegment) return null
+    return firstPathSegment
+  }
+
+  const enforceAntilink = async (context: IncomingCommandEnvelope): Promise<void> => {
+    if (!context.isGroup) return
+    if (!context.text || !LINK_PATTERN.test(context.text)) return
+
+    const enabled = await groupFeatureStore.isAntilinkEnabled(context.chatId)
+    if (!enabled) return
+    const links = extractLinks(context.text)
+    if (!links.length) return
+    const allowedDomains = await groupFeatureStore.getAntilinkAllowedDomains(context.chatId)
+    const allowOwnInvite = await groupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled(context.chatId)
+
+    let ownInviteCode: string | null = null
+    const shouldAllowMessage = async (): Promise<boolean> => {
+      for (const link of links) {
+        const url = normalizeLinkToUrl(link)
+        if (!url) return false
+        if (isAllowedByDomain(url, allowedDomains)) continue
+        if (!allowOwnInvite) return false
+
+        const inviteCode = extractInviteCode(url)
+        if (!inviteCode) return false
+        if (!ownInviteCode) {
+          ownInviteCode = (await context.sock.groupInviteCode(context.chatId)) ?? null
+        }
+        if (inviteCode !== ownInviteCode) return false
+      }
+      return true
+    }
+
+    if (await shouldAllowMessage()) return
+
+    const metadata = await context.sock.groupMetadata(context.chatId)
+    const sender = normalizeParticipantId(context.sender)
+    const botJid = normalizeParticipantId(context.sock.user?.id ?? '')
+    const participantById = new Map(metadata.participants.map((participant) => [normalizeParticipantId(participant.id), participant]))
+    const senderParticipant = participantById.get(sender)
+    const botParticipant = participantById.get(botJid)
+
+    const senderIsAdmin = Boolean(senderParticipant && (senderParticipant.admin === 'admin' || senderParticipant.admin === 'superadmin'))
+    const botIsAdmin = Boolean(botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin'))
+
+    if (senderIsAdmin || !botIsAdmin) return
+
+    await context.sock.groupParticipantsUpdate(context.chatId, [context.sender], 'remove')
+    const { deleted, total } = await deleteRecentMessagesFromSender(context)
+    await context.sock.sendMessage(context.chatId, {
+      text: `🚫 ${context.message.pushName ?? 'Usuário'} removido por enviar link (antilink ativo).\n🧹 Mensagens apagadas: ${deleted}/${total}.`,
+    })
+  }
+
   return {
     async process(sock, message) {
       const context = buildIncomingCommandEnvelope(sock, message)
@@ -329,6 +476,12 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
       }
 
       await logIncomingMessage(context, logger)
+      trackRecentSenderMessage(context)
+      try {
+        await enforceAntilink(context)
+      } catch (error) {
+        logger.error('falha ao aplicar antilink', { err: error, chatId: context.chatId, sender: context.sender })
+      }
 
       if (!context.commandName) return
 

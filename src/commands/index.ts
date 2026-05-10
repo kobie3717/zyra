@@ -1,4 +1,5 @@
 import type { Command } from './types.js'
+import { antilinkCommand } from './antilink.js'
 import {
   addCommand,
   banCommand,
@@ -25,6 +26,7 @@ const commandRegistry: Record<string, Command> = {}
 const menuCommand = createMenuCommand(() => commandRegistry)
 
 Object.assign(commandRegistry, {
+  [antilinkCommand.name]: antilinkCommand,
   [menuCommand.name]: menuCommand,
   [pingCommand.name]: pingCommand,
   [stickerCommand.name]: stickerCommand,

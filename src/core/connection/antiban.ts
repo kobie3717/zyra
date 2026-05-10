@@ -52,8 +52,8 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
 
   const antiBanConfig: AntiBanConfig = {
     logging: config.antibanLogging,
-    rateLimiter: buildRateLimiterConfig(),
-    warmUp: buildWarmUpConfig(),
+    ...buildRateLimiterConfig(),
+    ...buildWarmUpConfig(),
     lidResolver,
     jidCanonicalizer: {
       enabled: config.antibanJidCanonicalizerEnabled,

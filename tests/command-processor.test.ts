@@ -6,9 +6,17 @@ const mockConfig = {
 }
 
 const mockCommands: Record<string, { execute: ReturnType<typeof vi.fn>; name: string; description: string }> = {}
+const { mockGroupFeatureStore } = vi.hoisted(() => ({
+  mockGroupFeatureStore: {
+    isAntilinkEnabled: vi.fn(),
+    getAntilinkAllowedDomains: vi.fn(),
+    isAntilinkAllowOwnGroupInviteEnabled: vi.fn(),
+  },
+}))
 
 vi.mock('../src/config/index.js', () => ({ config: mockConfig }))
 vi.mock('../src/commands/index.js', () => ({ commands: mockCommands }))
+vi.mock('../src/store/group-feature-store.js', () => ({ groupFeatureStore: mockGroupFeatureStore }))
 vi.mock('../src/store/sql-store.js', () => ({
   createSqlStore: vi.fn(() => ({
     enabled: false,
@@ -42,6 +50,9 @@ const createMessage = (text: string, options: { chatId?: string; participant?: s
 beforeEach(() => {
   mockConfig.commandPrefix = '!'
   mockConfig.allowOwnMessages = false
+  mockGroupFeatureStore.isAntilinkEnabled.mockReset().mockResolvedValue(false)
+  mockGroupFeatureStore.getAntilinkAllowedDomains.mockReset().mockResolvedValue([])
+  mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockReset().mockResolvedValue(false)
   for (const key of Object.keys(mockCommands)) {
     delete mockCommands[key]
   }
@@ -245,5 +256,244 @@ describe('CommandProcessor', () => {
     await processor.process(sock as never, message as never)
 
     expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('aplica antilink removendo participante quando ativo e link nao permitido', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue([])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(false)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [
+        { id: 'user@s.whatsapp.net' },
+        { id: 'bot@s.whatsapp.net', admin: 'admin' },
+      ],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode: vi.fn().mockResolvedValue('SELF123'),
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    await processor.process(
+      sock as never,
+      createMessage('acesse https://exemplo.com', { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }) as never
+    )
+
+    expect(groupParticipantsUpdate).toHaveBeenCalledWith('grupo@g.us', ['user@s.whatsapp.net'], 'remove')
+    expect(sendMessage).toHaveBeenCalledWith(
+      'grupo@g.us',
+      { text: '🚫 Tester removido por enviar link (antilink ativo).\n🧹 Mensagens apagadas: 1/1.' }
+    )
+    expect(sendMessage).toHaveBeenCalledWith(
+      'grupo@g.us',
+      {
+        delete: expect.objectContaining({
+          id: 'msg-1',
+          remoteJid: 'grupo@g.us',
+          participant: 'user@s.whatsapp.net',
+          fromMe: false,
+        }),
+      }
+    )
+  })
+
+  it('nao remove quando dominio esta na whitelist do grupo', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue(['exemplo.com'])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(false)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [{ id: 'user@s.whatsapp.net' }, { id: 'bot@s.whatsapp.net', admin: 'admin' }],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode: vi.fn().mockResolvedValue('SELF123'),
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    await processor.process(
+      sock as never,
+      createMessage('acesse https://blog.exemplo.com/post', { chatId: 'grupo@g.us' }) as never
+    )
+
+    expect(groupParticipantsUpdate).not.toHaveBeenCalled()
+  })
+
+  it('permite convite do proprio grupo quando invite on', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue([])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(true)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [{ id: 'user@s.whatsapp.net' }, { id: 'bot@s.whatsapp.net', admin: 'admin' }],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+    const groupInviteCode = vi.fn().mockResolvedValue('SELF123')
+
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode,
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    await processor.process(
+      sock as never,
+      createMessage('entrem: https://chat.whatsapp.com/SELF123', { chatId: 'grupo@g.us' }) as never
+    )
+
+    expect(groupInviteCode).toHaveBeenCalledWith('grupo@g.us')
+    expect(groupParticipantsUpdate).not.toHaveBeenCalled()
+  })
+
+  it('remove quando invite on mas codigo e de outro grupo', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue([])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(true)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [{ id: 'user@s.whatsapp.net' }, { id: 'bot@s.whatsapp.net', admin: 'admin' }],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode: vi.fn().mockResolvedValue('SELF123'),
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    await processor.process(
+      sock as never,
+      createMessage('entrem: https://chat.whatsapp.com/OTHER999', { chatId: 'grupo@g.us' }) as never
+    )
+
+    expect(groupParticipantsUpdate).toHaveBeenCalledWith('grupo@g.us', ['user@s.whatsapp.net'], 'remove')
+  })
+
+  it('apaga no maximo as ultimas 5 mensagens do usuario apos remocao', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue([])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(false)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [{ id: 'user@s.whatsapp.net' }, { id: 'bot@s.whatsapp.net', admin: 'admin' }],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode: vi.fn().mockResolvedValue('SELF123'),
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    for (let index = 1; index <= 6; index += 1) {
+      await processor.process(
+        sock as never,
+        {
+          ...createMessage(`msg ${index}`, { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }),
+          key: {
+            ...createMessage('x', { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }).key,
+            id: `msg-${index}`,
+          },
+        } as never
+      )
+    }
+
+    await processor.process(
+      sock as never,
+      {
+        ...createMessage('link https://dominio-bloqueado.com', { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }),
+        key: {
+          ...createMessage('x', { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }).key,
+          id: 'msg-7',
+        },
+      } as never
+    )
+
+    const deletes = sendMessage.mock.calls.filter((call) => call[1] && typeof call[1] === 'object' && 'delete' in call[1])
+    expect(deletes).toHaveLength(5)
+  })
+
+  it('revalida delete com segunda tentativa quando a primeira falha', async () => {
+    mockGroupFeatureStore.isAntilinkEnabled.mockResolvedValue(true)
+    mockGroupFeatureStore.getAntilinkAllowedDomains.mockResolvedValue([])
+    mockGroupFeatureStore.isAntilinkAllowOwnGroupInviteEnabled.mockResolvedValue(false)
+
+    const logger = createLogger()
+    const sqlStore = { enabled: false, recordCommandLog: vi.fn() }
+    const sendMessage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('delete-fail-once'))
+      .mockResolvedValue(undefined)
+      .mockResolvedValue(undefined)
+    const groupMetadata = vi.fn().mockResolvedValue({
+      participants: [{ id: 'user@s.whatsapp.net' }, { id: 'bot@s.whatsapp.net', admin: 'admin' }],
+    })
+    const groupParticipantsUpdate = vi.fn().mockResolvedValue([])
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      sendMessage,
+      groupMetadata,
+      groupParticipantsUpdate,
+      groupInviteCode: vi.fn().mockResolvedValue('SELF123'),
+    }
+
+    const { createCommandProcessor } = await import('../src/core/command-runtime/processor.ts')
+    const processor = createCommandProcessor({ logger, sqlStore: sqlStore as never })
+
+    await processor.process(
+      sock as never,
+      createMessage('link https://dominio-bloqueado.com', { chatId: 'grupo@g.us', participant: 'user@s.whatsapp.net' }) as never
+    )
+
+    const deleteCalls = sendMessage.mock.calls.filter((call) => call[1] && typeof call[1] === 'object' && 'delete' in call[1])
+    expect(deleteCalls).toHaveLength(2)
+    expect(sendMessage).toHaveBeenLastCalledWith(
+      'grupo@g.us',
+      { text: '🚫 Tester removido por enviar link (antilink ativo).\n🧹 Mensagens apagadas: 1/1.' }
+    )
   })
 })

@@ -104,6 +104,18 @@ export async function initMysqlSchema(logger?: AppLogger): Promise<void> {
       },
       logger
     )
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS group_feature_flags (
+        connection_id VARCHAR(128) NOT NULL,
+        group_jid VARCHAR(128) NOT NULL,
+        antilink_enabled TINYINT(1) NULL,
+        antilink_allowed_domains_json JSON NULL,
+        antilink_allow_own_group_invite TINYINT(1) NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (connection_id, group_jid),
+        INDEX idx_group_feature_flags_updated (connection_id, updated_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
     await ensureMysqlConnection(pool)
     logger?.info('schema mysql verificado/criado', { tables: statements.length, database: dbName })
   } finally {
