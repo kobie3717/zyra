@@ -214,4 +214,12 @@ export const config = {
   get mediaDownloadDir() {
     return process.env.WA_MEDIA_DOWNLOAD_DIR ?? 'data/media'
   },
+  /** Limite máximo de armazenamento local de mídia em bytes (WA_MEDIA_MAX_BYTES). */
+  get mediaMaxBytes() {
+    return readNumber(process.env.WA_MEDIA_MAX_BYTES, 10 * 1024 * 1024 * 1024)
+  },
+  /** Quantidade de dias para retenção de mídias locais (WA_MEDIA_RETENTION_DAYS). */
+  get mediaRetentionDays() {
+    return readNumber(process.env.WA_MEDIA_RETENTION_DAYS, 7)
+  },
 }
