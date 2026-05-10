@@ -529,10 +529,8 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
     const participantById = new Map(metadata.participants.map((participant) => [normalizeParticipantId(participant.id), participant]))
     const participantByUserKey = new Map(metadata.participants.map((participant) => [toUserKey(participant.id), participant]))
     const senderParticipant = participantById.get(sender) ?? participantByUserKey.get(toUserKey(sender))
-    const botParticipant = participantById.get(botJid) ?? participantByUserKey.get(toUserKey(botJid))
 
     const senderIsAdmin = Boolean(senderParticipant && (senderParticipant.admin === 'admin' || senderParticipant.admin === 'superadmin'))
-    const botIsAdmin = Boolean(botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin'))
 
     if (senderIsAdmin) {
       logger.info('antilink ignorado: remetente admin', { chatId: context.chatId, sender: context.sender, links })
