@@ -22,6 +22,10 @@ const mockConfig = {
   antibanJidCanonicalizerEnabled: true,
   antibanLidCanonical: 'pn',
   antibanLidMaxEntries: 10000,
+  antibanDeafSessionEnabled: true,
+  antibanDeafSessionTimeoutMs: 300000,
+  antibanDeafSessionMinUptimeMs: 120000,
+  antibanDeafSessionAutoReconnect: true,
 }
 
 const adapterSaveMock = vi.fn()
@@ -51,6 +55,8 @@ const createLogger = () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockConfig.antibanEnabled = true
+  mockConfig.antibanDeafSessionEnabled = true
   adapterLoadMock.mockResolvedValue({ day: 2 })
   adapterSaveMock.mockResolvedValue(undefined)
   wrapSocketMock.mockImplementation((sock) => ({ ...sock, antiban: { exportWarmUpState: () => ({ day: 2 }), getStats: () => ({}) } }))
@@ -108,5 +114,125 @@ describe('antiban helper', () => {
       }),
       { day: 1 }
     )
+  })
+
+  it('retorna undefined no load quando antiban esta desativado', async () => {
+    mockConfig.antibanEnabled = false
+    const logger = createLogger()
+    const { loadAntiBanWarmUpState } = await import('../src/core/connection/antiban.ts')
+
+    const loaded = await loadAntiBanWarmUpState('conn-a', logger as never)
+
+    expect(loaded).toBeUndefined()
+    expect(adapterLoadMock).not.toHaveBeenCalled()
+  })
+
+  it('retorna undefined e loga warn quando load falha', async () => {
+    const logger = createLogger()
+    adapterLoadMock.mockRejectedValueOnce(new Error('boom'))
+    const { loadAntiBanWarmUpState } = await import('../src/core/connection/antiban.ts')
+
+    const loaded = await loadAntiBanWarmUpState('conn-a', logger as never)
+
+    expect(loaded).toBeUndefined()
+    expect(logger.warn).toHaveBeenCalledWith(
+      'falha ao carregar estado de warm-up do antiban',
+      expect.objectContaining({ connectionId: 'conn-a', err: expect.any(Error) })
+    )
+  })
+
+  it('nao salva quando socket nao possui antiban', async () => {
+    const logger = createLogger()
+    const { saveAntiBanWarmUpState } = await import('../src/core/connection/antiban.ts')
+
+    await saveAntiBanWarmUpState({} as never, 'conn-a', logger as never, 'sem-antiban')
+
+    expect(adapterSaveMock).not.toHaveBeenCalled()
+    expect(logger.debug).not.toHaveBeenCalled()
+  })
+
+  it('loga warn quando save falha', async () => {
+    const logger = createLogger()
+    adapterSaveMock.mockRejectedValueOnce(new Error('save failed'))
+    const { saveAntiBanWarmUpState } = await import('../src/core/connection/antiban.ts')
+
+    await saveAntiBanWarmUpState(
+      { antiban: { exportWarmUpState: () => ({ day: 3 }), getStats: () => ({}) } } as never,
+      'conn-a',
+      logger as never,
+      'teste-save'
+    )
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'falha ao salvar estado de warm-up do antiban',
+      expect.objectContaining({ connectionId: 'conn-a', reason: 'teste-save', err: expect.any(Error) })
+    )
+  })
+
+  it('retorna o socket original quando antiban esta desativado', async () => {
+    mockConfig.antibanEnabled = false
+    const logger = createLogger()
+    const sock = { ev: { on: vi.fn() }, sendMessage: vi.fn() }
+    const { wrapSocketWithAntiBan } = await import('../src/core/connection/antiban.ts')
+
+    const wrapped = wrapSocketWithAntiBan(sock as never, logger as never, 'conn-a')
+
+    expect(wrapped).toBe(sock)
+    expect(wrapSocketMock).not.toHaveBeenCalled()
+    expect(logger.info).not.toHaveBeenCalled()
+  })
+
+  it('cria callbacks de observabilidade e deafSession no config', async () => {
+    const logger = createLogger()
+    const { createAntiBanConfig } = await import('../src/core/connection/antiban.ts')
+
+    const antibanConfig = createAntiBanConfig(logger as never, 'conn-z') as Record<string, unknown>
+    const health = antibanConfig.health as { onRiskChange: (status: unknown) => void; autoPauseAt: string }
+    const timelock = antibanConfig.timelock as {
+      onTimelockDetected: (state: unknown) => void
+      onTimelockLifted: (state: unknown) => void
+    }
+    const deafSession = antibanConfig.deafSession as {
+      onDeafSession: (state: unknown) => void
+      timeoutMs: number
+      minUptimeMs: number
+      autoReconnect: boolean
+    }
+
+    health.onRiskChange({ risk: 'high', score: 90, reasons: ['burst'], recommendation: 'pause' })
+    timelock.onTimelockDetected({ enforcementType: 'temporary', expiresAt: new Date('2026-05-10T00:00:00.000Z'), errorCount: 2 })
+    timelock.onTimelockLifted({ enforcementType: 'temporary', errorCount: 0 })
+    deafSession.onDeafSession({ silenceMs: 1000, timeoutMs: 300000, uptimeMs: 9999, autoReconnect: true })
+
+    expect(health.autoPauseAt).toBe('high')
+    expect(deafSession.timeoutMs).toBe(300000)
+    expect(deafSession.minUptimeMs).toBe(120000)
+    expect(deafSession.autoReconnect).toBe(true)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'antiban alterou o nivel de risco',
+      expect.objectContaining({ connectionId: 'conn-z', risk: 'high', score: 90 })
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      'antiban detectou reachout timelock',
+      expect.objectContaining({ connectionId: 'conn-z', enforcementType: 'temporary', errorCount: 2 })
+    )
+    expect(logger.info).toHaveBeenCalledWith(
+      'antiban liberou o reachout timelock',
+      expect.objectContaining({ connectionId: 'conn-z', enforcementType: 'temporary', errorCount: 0 })
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      'antiban detectou sessao possivelmente surda',
+      expect.objectContaining({ connectionId: 'conn-z', silenceMs: 1000, timeoutMs: 300000, uptimeMs: 9999, autoReconnect: true })
+    )
+  })
+
+  it('nao inclui deafSession quando desabilitado', async () => {
+    mockConfig.antibanDeafSessionEnabled = false
+    const logger = createLogger()
+    const { createAntiBanConfig } = await import('../src/core/connection/antiban.ts')
+
+    const antibanConfig = createAntiBanConfig(logger as never, 'conn-z') as Record<string, unknown>
+
+    expect(antibanConfig).not.toHaveProperty('deafSession')
   })
 })
