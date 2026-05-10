@@ -26,6 +26,46 @@ const getStoreLogger = () => {
   return storeLoggerRef
 }
 
+const LID_PN_CONFLICT_WINDOW_MS = 10 * 60 * 1000
+const lidPnPairLocks = new Map<string, Promise<void>>()
+const recentLidPnConflicts = new Map<string, { count: number; firstSeenAt: number; lastSeenAt: number }>()
+
+const withLidPnPairLock = async <T>(pairKey: string, fn: () => Promise<T>): Promise<T> => {
+  const previous = lidPnPairLocks.get(pairKey) ?? Promise.resolve()
+  let release: () => void = () => {}
+  const current = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  lidPnPairLocks.set(pairKey, previous.then(() => current))
+  await previous
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (lidPnPairLocks.get(pairKey) === current) {
+      lidPnPairLocks.delete(pairKey)
+    }
+  }
+}
+
+const trackLidPnConflict = (pairKey: string): { firstInWindow: boolean; count: number; windowStartedAt: number } => {
+  const now = Date.now()
+  const existing = recentLidPnConflicts.get(pairKey)
+  if (!existing || now - existing.firstSeenAt > LID_PN_CONFLICT_WINDOW_MS) {
+    recentLidPnConflicts.set(pairKey, {
+      count: 1,
+      firstSeenAt: now,
+      lastSeenAt: now,
+    })
+    return { firstInWindow: true, count: 1, windowStartedAt: now }
+  }
+
+  existing.count += 1
+  existing.lastSeenAt = now
+  recentLidPnConflicts.set(pairKey, existing)
+  return { firstInWindow: false, count: existing.count, windowStartedAt: existing.firstSeenAt }
+}
+
 const MAX_LENGTHS = {
   jid: 128,
   messageId: 128,
@@ -1257,58 +1297,65 @@ export function createSqlStore(connectionId?: string): SqlStore {
           const normalizedPn = normalizePnLid(pn)
           const normalizedLid = normalizePnLid(lid)
           if (!normalizedPn || !normalizedLid) return
+          const pairKey = `${resolvedConnectionId}|${normalizedPn}|${normalizedLid}`
+          await withLidPnPairLock(pairKey, async () => {
+            const existingPnUserId = await lookupUserIdByIdentifier(pool, { type: 'pn', value: normalizedPn })
+            const existingLidUserId = await lookupUserIdByIdentifier(pool, { type: 'lid', value: normalizedLid })
+            if (existingPnUserId && existingLidUserId && existingPnUserId !== existingLidUserId) {
+              const isolatedUserId = await createIsolatedUserForPnLid(pool, normalizedPn, normalizedLid)
+              const conflict = trackLidPnConflict(pairKey)
+              if (conflict.firstInWindow || conflict.count % 5 === 0) {
+                getStoreLogger().warn('conflito de identidade PN/LID detectado; isolamento aplicado', {
+                  connectionId: resolvedConnectionId,
+                  pn: normalizedPn,
+                  lid: normalizedLid,
+                  existingPnUserId,
+                  existingLidUserId,
+                  isolatedUserId,
+                  conflictCountInWindow: conflict.count,
+                  conflictWindowStartedAt: new Date(conflict.windowStartedAt).toISOString(),
+                })
+              }
+              await pool.execute(
+                `INSERT INTO lid_mappings (
+                   connection_id,
+                   pn,
+                   lid,
+                   user_id
+                 )
+                 VALUES (?, ?, ?, UNHEX(REPLACE(?, '-', '')))
+                 ON DUPLICATE KEY UPDATE
+                   lid = VALUES(lid),
+                   user_id = VALUES(user_id)`,
+                [resolvedConnectionId, normalizedPn, normalizedLid, isolatedUserId]
+              )
+              return
+            }
 
-          const existingPnUserId = await lookupUserIdByIdentifier(pool, { type: 'pn', value: normalizedPn })
-          const existingLidUserId = await lookupUserIdByIdentifier(pool, { type: 'lid', value: normalizedLid })
-          if (existingPnUserId && existingLidUserId && existingPnUserId !== existingLidUserId) {
-            const isolatedUserId = await createIsolatedUserForPnLid(pool, normalizedPn, normalizedLid)
-            getStoreLogger().warn('conflito de identidade PN/LID detectado; isolamento aplicado', {
-              connectionId: resolvedConnectionId,
-              pn: normalizedPn,
-              lid: normalizedLid,
-              existingPnUserId,
-              existingLidUserId,
-              isolatedUserId,
-            })
+            let userId: string | null = null
+            if (normalizedPn || normalizedLid) {
+              const identifiers: Array<{ type: UserIdentifierType; value: string }> = []
+              if (normalizedPn) identifiers.push({ type: 'pn', value: normalizedPn })
+              if (normalizedLid) identifiers.push({ type: 'lid', value: normalizedLid })
+              userId = await ensureUserByIdentifiers(pool, identifiers, null)
+            }
             await pool.execute(
               `INSERT INTO lid_mappings (
-                 connection_id,
-                 pn,
-                 lid,
-                 user_id
-               )
-               VALUES (?, ?, ?, UNHEX(REPLACE(?, '-', '')))
-               ON DUPLICATE KEY UPDATE
-                 lid = VALUES(lid),
-                 user_id = VALUES(user_id)`,
-              [resolvedConnectionId, normalizedPn, normalizedLid, isolatedUserId]
+               connection_id,
+               pn,
+               lid,
+               user_id
+             )
+             VALUES (?, ?, ?, IF(?, UNHEX(REPLACE(?, '-', '')), NULL))
+             ON DUPLICATE KEY UPDATE
+               lid = VALUES(lid),
+               user_id = VALUES(user_id)`,
+              [resolvedConnectionId, normalizedPn, normalizedLid, userId ? 1 : 0, userId]
             )
-            return
-          }
-
-          let userId: string | null = null
-          if (normalizedPn || normalizedLid) {
-            const identifiers: Array<{ type: UserIdentifierType; value: string }> = []
-            if (normalizedPn) identifiers.push({ type: 'pn', value: normalizedPn })
-            if (normalizedLid) identifiers.push({ type: 'lid', value: normalizedLid })
-            userId = await ensureUserByIdentifiers(pool, identifiers, null)
-          }
-          await pool.execute(
-            `INSERT INTO lid_mappings (
-             connection_id,
-             pn,
-             lid,
-             user_id
-           )
-           VALUES (?, ?, ?, IF(?, UNHEX(REPLACE(?, '-', '')), NULL))
-           ON DUPLICATE KEY UPDATE
-             lid = VALUES(lid),
-             user_id = VALUES(user_id)`,
-            [resolvedConnectionId, normalizedPn, normalizedLid, userId ? 1 : 0, userId]
-          )
+          })
         },
         undefined,
-        { ensureConnection: true }
+        { ensureConnection: true, action: 'setLidMapping' }
       ),
     getLidForPn: async (pn) =>
       safe(async (pool) => {
