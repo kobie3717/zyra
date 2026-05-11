@@ -1,6 +1,6 @@
 name: Wiki Copilot Dispatch
 
-on:
+"on":
   workflow_dispatch:
   schedule:
     - cron: "30 9 * * 1"
@@ -83,4 +83,3 @@ Issue de orquestração para tarefas automáticas da wiki via agentes do Copilot
             })
 
             core.notice(`Copilot acionado na issue #${target.number}: ${target.html_url}`)
-
