@@ -2,20 +2,6 @@ name: Wiki Copilot Agent
 
 on:
   workflow_dispatch:
-    inputs:
-      agent:
-        description: "Agente da pasta .github/agents"
-        required: true
-        default: "wiki-maintainer"
-        type: choice
-        options:
-          - wiki-maintainer
-          - wiki-runbook-writer
-      task:
-        description: "Tarefa para o Copilot executar"
-        required: true
-        default: "Revise e atualize a wiki técnica com base nas mudanças recentes do código, mantendo Home/Sidebar/Footer consistentes."
-        type: string
   schedule:
     - cron: "30 9 * * 1"
 
@@ -36,9 +22,9 @@ jobs:
         with:
           script: |
             const isManual = context.eventName === 'workflow_dispatch'
-            const agent = isManual ? core.getInput('agent') : 'wiki-maintainer'
+            const agent = 'wiki-maintainer'
             const task = isManual
-              ? core.getInput('task')
+              ? 'Execução manual: revisar e atualizar wiki técnica com foco em consistência entre Home, _Sidebar e _Footer.'
               : 'Execução semanal: auditar e atualizar wiki técnica, runbooks e links de navegação.'
 
             const owner = context.repo.owner
@@ -97,4 +83,3 @@ Issue de orquestração para tarefas automáticas da wiki via agentes do Copilot
             })
 
             core.notice(`Copilot acionado na issue #${target.number}: ${target.html_url}`)
-
