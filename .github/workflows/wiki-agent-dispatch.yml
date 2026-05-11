@@ -1,0 +1,79 @@
+name: Wiki Agent Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Agente a acionar"
+        required: true
+        default: "wiki-maintainer"
+        type: choice
+        options:
+          - wiki-maintainer
+          - wiki-runbook-writer
+      task:
+        description: "Tarefa para o agente executar"
+        required: true
+        default: "Sincronize a wiki com as mudanças recentes do código e atualize Home/Sidebar/Footer se necessário."
+        type: string
+      branch:
+        description: "Branch alvo para análise do agente"
+        required: false
+        default: "master"
+        type: string
+  schedule:
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dispatch-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build default task (scheduled run)
+        id: defaults
+        run: |
+          echo "agent=wiki-maintainer" >> "$GITHUB_OUTPUT"
+          echo "branch=master" >> "$GITHUB_OUTPUT"
+          echo "task=Execute manutenção semanal da wiki: revisar páginas técnicas, validar consistência de links e atualizar runbooks de produção/troubleshooting conforme mudanças recentes." >> "$GITHUB_OUTPUT"
+
+      - name: Create issue to trigger Copilot agent
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isManual = context.eventName === 'workflow_dispatch'
+            const inputAgent = isManual ? core.getInput('agent') : '${{ steps.defaults.outputs.agent }}'
+            const inputTask = isManual ? core.getInput('task') : '${{ steps.defaults.outputs.task }}'
+            const inputBranch = isManual ? core.getInput('branch') : '${{ steps.defaults.outputs.branch }}'
+
+            const title = `[Wiki Agent] ${inputAgent} - ${new Date().toISOString().slice(0, 10)}`
+            const body = [
+              `@copilot use o agente \`${inputAgent}\` para executar esta tarefa.`,
+              ``,
+              `## Tarefa`,
+              inputTask,
+              ``,
+              `## Contexto`,
+              `- Repositório: ${context.repo.owner}/${context.repo.repo}`,
+              `- Branch alvo: ${inputBranch || 'master'}`,
+              `- Workflow: ${context.workflow}`,
+              `- Execução: ${context.runId}`,
+              ``,
+              `## Critérios de aceite`,
+              `1. Atualizar documentação impactada com base no código atual.`,
+              `2. Manter consistência entre Home, _Sidebar e _Footer.`,
+              `3. Propor/abrir PR com resumo técnico das mudanças.`,
+            ].join('\n')
+
+            const { data } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['documentation', 'wiki', 'copilot']
+            })
+
+            core.notice(`Issue criada para acionar agente: ${data.html_url}`)
+
