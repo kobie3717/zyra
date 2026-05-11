@@ -14,9 +14,7 @@ type GroupFeatureState = {
 
 type GroupFeaturesData = Record<string, GroupFeatureState>
 type GroupFeatureRow = RowDataPacket & {
-  antilink_enabled: number | null
-  antilink_allowed_domains_json: string | null
-  antilink_allow_own_group_invite: number | null
+  config_json: string | null
 }
 
 const DATA_DIR = path.resolve(process.cwd(), '.zyra-data')
@@ -28,6 +26,7 @@ class GroupFeatureStore {
   #data: GroupFeaturesData = {}
   #cache = new Map<string, GroupFeatureState>()
   #tableReady = false
+  #legacyMigrationChecked = false
 
   async #load(): Promise<void> {
     if (this.#loaded) return
@@ -65,18 +64,55 @@ class GroupFeatureStore {
     const pool = getMysqlPool()
     if (!pool) return
     await pool.execute(
-      `CREATE TABLE IF NOT EXISTS group_feature_flags (
+      `CREATE TABLE IF NOT EXISTS group_config (
         connection_id VARCHAR(128) NOT NULL,
         group_jid VARCHAR(128) NOT NULL,
-        antilink_enabled TINYINT(1) NULL,
-        antilink_allowed_domains_json JSON NULL,
-        antilink_allow_own_group_invite TINYINT(1) NULL,
+        config_json JSON NOT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (connection_id, group_jid),
-        INDEX idx_group_feature_flags_updated (connection_id, updated_at)
+        INDEX idx_group_config_updated (connection_id, updated_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
+    await this.#migrateLegacyFlagsTable(pool)
     this.#tableReady = true
+  }
+
+  async #migrateLegacyFlagsTable(pool: NonNullable<ReturnType<typeof getMysqlPool>>): Promise<void> {
+    if (this.#legacyMigrationChecked) return
+    this.#legacyMigrationChecked = true
+    try {
+      type TableExistsRow = RowDataPacket & { count: number }
+      const [rows] = await pool.execute<TableExistsRow[]>(
+        `SELECT COUNT(*) AS count
+         FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name = 'group_feature_flags'`
+      )
+      if ((rows[0]?.count ?? 0) === 0) return
+      await pool.execute(
+        `INSERT INTO group_config (connection_id, group_jid, config_json)
+         SELECT
+           connection_id,
+           group_jid,
+           JSON_OBJECT(
+             'antilink', CASE
+               WHEN antilink_enabled IS NULL THEN CAST(NULL AS JSON)
+               WHEN antilink_enabled = 1 THEN TRUE
+               ELSE FALSE
+             END,
+             'antilinkAllowedDomains', COALESCE(antilink_allowed_domains_json, JSON_ARRAY()),
+             'antilinkAllowOwnGroupInvite', CASE
+               WHEN antilink_allow_own_group_invite IS NULL THEN CAST(NULL AS JSON)
+               WHEN antilink_allow_own_group_invite = 1 THEN TRUE
+               ELSE FALSE
+             END
+           )
+         FROM group_feature_flags
+         ON DUPLICATE KEY UPDATE config_json = VALUES(config_json)`
+      )
+    } catch {
+      // se migracao falhar, o fluxo segue com cache local/redis
+    }
   }
 
   async #loadStateFromSql(groupJid: string): Promise<GroupFeatureState | null> {
@@ -86,23 +122,16 @@ class GroupFeatureStore {
     try {
       await this.#ensureSqlTable()
       const [rows] = await pool.execute<GroupFeatureRow[]>(
-        `SELECT antilink_enabled, antilink_allowed_domains_json, antilink_allow_own_group_invite
-         FROM group_feature_flags
+        `SELECT config_json
+         FROM group_config
          WHERE connection_id = ? AND group_jid = ?
          LIMIT 1`,
         [config.connectionId ?? 'default', groupJid]
       )
       const row = rows[0]
       if (!row) return null
-      const parsedDomains = row.antilink_allowed_domains_json ? JSON.parse(row.antilink_allowed_domains_json) : []
-      const state: GroupFeatureState = {
-        ...(typeof row.antilink_enabled === 'number' ? { antilink: row.antilink_enabled === 1 } : {}),
-        ...(Array.isArray(parsedDomains) ? { antilinkAllowedDomains: parsedDomains } : {}),
-        ...(typeof row.antilink_allow_own_group_invite === 'number'
-          ? { antilinkAllowOwnGroupInvite: row.antilink_allow_own_group_invite === 1 }
-          : {}),
-      }
-      return this.#normalizeState(state)
+      if (!row.config_json) return null
+      return this.#normalizeState(JSON.parse(row.config_json) as GroupFeatureState)
     } catch {
       return null
     }
@@ -115,24 +144,13 @@ class GroupFeatureStore {
     try {
       await this.#ensureSqlTable()
       await pool.execute(
-        `INSERT INTO group_feature_flags (
+        `INSERT INTO group_config (
            connection_id,
            group_jid,
-           antilink_enabled,
-           antilink_allowed_domains_json,
-           antilink_allow_own_group_invite
-         ) VALUES (?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           antilink_enabled = VALUES(antilink_enabled),
-           antilink_allowed_domains_json = VALUES(antilink_allowed_domains_json),
-           antilink_allow_own_group_invite = VALUES(antilink_allow_own_group_invite)`,
-        [
-          config.connectionId ?? 'default',
-          groupJid,
-          typeof state.antilink === 'boolean' ? (state.antilink ? 1 : 0) : null,
-          JSON.stringify(state.antilinkAllowedDomains ?? []),
-          typeof state.antilinkAllowOwnGroupInvite === 'boolean' ? (state.antilinkAllowOwnGroupInvite ? 1 : 0) : null,
-        ]
+           config_json
+         ) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE config_json = VALUES(config_json)`,
+        [config.connectionId ?? 'default', groupJid, JSON.stringify(this.#normalizeState(state))]
       )
     } catch {
       // fallbacks locais continuam funcionando mesmo sem SQL

@@ -63,6 +63,18 @@ const ensureIndex = async (pool: mysql.Pool, options: { table: string; index: st
   return true
 }
 
+const tableExists = async (pool: mysql.Pool, tableName: string): Promise<boolean> => {
+  type TableExistsRow = RowDataPacket & { count: number }
+  const [rows] = await pool.query<TableExistsRow[]>(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.tables
+     WHERE table_schema = DATABASE()
+       AND table_name = ?`,
+    [tableName]
+  )
+  return (rows[0]?.count ?? 0) > 0
+}
+
 /**
  * Cria o schema do MySQL (se necessario) usando o modelo em docs/exemplodbmodel.md.
  */
@@ -105,17 +117,38 @@ export async function initMysqlSchema(logger?: AppLogger): Promise<void> {
       logger
     )
     await pool.query(
-      `CREATE TABLE IF NOT EXISTS group_feature_flags (
+      `CREATE TABLE IF NOT EXISTS group_config (
         connection_id VARCHAR(128) NOT NULL,
         group_jid VARCHAR(128) NOT NULL,
-        antilink_enabled TINYINT(1) NULL,
-        antilink_allowed_domains_json JSON NULL,
-        antilink_allow_own_group_invite TINYINT(1) NULL,
+        config_json JSON NOT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (connection_id, group_jid),
-        INDEX idx_group_feature_flags_updated (connection_id, updated_at)
+        INDEX idx_group_config_updated (connection_id, updated_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
+    if (await tableExists(pool, 'group_feature_flags')) {
+      await pool.query(
+        `INSERT INTO group_config (connection_id, group_jid, config_json)
+         SELECT
+           connection_id,
+           group_jid,
+           JSON_OBJECT(
+             'antilink', CASE
+               WHEN antilink_enabled IS NULL THEN CAST(NULL AS JSON)
+               WHEN antilink_enabled = 1 THEN TRUE
+               ELSE FALSE
+             END,
+             'antilinkAllowedDomains', COALESCE(antilink_allowed_domains_json, JSON_ARRAY()),
+             'antilinkAllowOwnGroupInvite', CASE
+               WHEN antilink_allow_own_group_invite IS NULL THEN CAST(NULL AS JSON)
+               WHEN antilink_allow_own_group_invite = 1 THEN TRUE
+               ELSE FALSE
+             END
+           )
+         FROM group_feature_flags
+         ON DUPLICATE KEY UPDATE config_json = VALUES(config_json)`
+      )
+    }
     await ensureMysqlConnection(pool)
     logger?.info('schema mysql verificado/criado', { tables: statements.length, database: dbName })
   } finally {
