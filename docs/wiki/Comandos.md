@@ -4,6 +4,11 @@
 
 ## Arquitetura de comandos
 
+## Referência prática
+
+- [Referência de Comandos](Comandos-Referencia)
+
+
 O Zyra usa runtime modular de comandos em `src/core/command-runtime` com contrato tipado em `src/commands/types.ts`.
 
 Fluxo:
