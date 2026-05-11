@@ -1,9 +1,9 @@
 name: Wiki Copilot Dispatch
 
-"on":
+on:
   workflow_dispatch:
   schedule:
-    - cron: "30 9 * * 1"
+    - cron: '30 9 * * 1'
 
 permissions:
   contents: read
@@ -17,15 +17,15 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Upsert issue and ping Copilot agent
+      - name: Upsert issue and ping Copilot
         uses: actions/github-script@v7
         with:
           script: |
             const isManual = context.eventName === 'workflow_dispatch'
             const agent = 'wiki-maintainer'
             const task = isManual
-              ? 'Execução manual: revisar e atualizar wiki técnica com foco em consistência entre Home, _Sidebar e _Footer.'
-              : 'Execução semanal: auditar e atualizar wiki técnica, runbooks e links de navegação.'
+              ? 'Manual run: review and update wiki with Home/Sidebar/Footer consistency.'
+              : 'Weekly run: audit and update technical wiki and operational runbooks.'
 
             const owner = context.repo.owner
             const repo = context.repo.repo
@@ -46,33 +46,24 @@ jobs:
               const created = await github.rest.issues.create({
                 owner,
                 repo,
-                title: '[Wiki Agent] Orquestração Copilot',
+                title: '[Wiki Agent] Copilot Orchestration',
                 labels,
-                body: `${marker}
-
-Issue de orquestração para tarefas automáticas da wiki via agentes do Copilot.
-
-Última execução: pendente.`,
+                body: `${marker}\n\nOrchestration issue for Copilot wiki agent tasks.`,
               })
               target = created.data
             }
 
             const body = [
-              `@copilot use o agente \`${agent}\` e execute a tarefa abaixo.`,
+              `@copilot use the agent \`${agent}\` and execute this task.`,
               '',
-              '## Tarefa',
+              '## Task',
               task,
               '',
-              '## Contexto',
-              `- Repositório: ${owner}/${repo}`,
-              `- Branch alvo: master`,
+              '## Context',
+              `- Repository: ${owner}/${repo}`,
+              '- Target branch: master',
               `- Workflow: ${context.workflow}`,
               `- Run: ${context.runId}`,
-              '',
-              '## Critérios de aceite',
-              '1. Atualizar conteúdo técnico impactado com base no código atual.',
-              '2. Preservar consistência entre Home, _Sidebar e _Footer.',
-              '3. Propor alterações em PR com resumo técnico objetivo.',
             ].join('\n')
 
             await github.rest.issues.createComment({
@@ -82,4 +73,4 @@ Issue de orquestração para tarefas automáticas da wiki via agentes do Copilot
               body,
             })
 
-            core.notice(`Copilot acionado na issue #${target.number}: ${target.html_url}`)
+            core.notice(`Copilot ping sent on issue #${target.number}: ${target.html_url}`)
