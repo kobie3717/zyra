@@ -1,4 +1,4 @@
-import { DisconnectReason, type BaileysEventMap, type GroupMetadata, type WAMessage, type WASocket } from '@whiskeysockets/baileys'
+import { DisconnectReason, jidDecode, type BaileysEventMap, type GroupMetadata, type WAMessage, type WASocket } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { AppLogger } from '../observability/logger.js'
@@ -118,6 +118,31 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
     return { chatJid: key.remoteJid, messageId: key.id, fromMe: Boolean(key.fromMe) }
   }
   const toGroupJid = (jid?: string | null) => (jid && jid.endsWith('@g.us') ? jid : null)
+  const persistUserDeviceFromJid = (rawJid: string | null | undefined, source: string) => {
+    if (!sqlStore.enabled || !rawJid) return
+    const decoded = jidDecode(rawJid)
+    if (!decoded?.user || !decoded.server || typeof decoded.device !== 'number' || decoded.device < 0) return
+    const userJid = `${decoded.user}@${decoded.server}`
+    void sqlStore.setUserDevice({
+      userJid,
+      deviceId: String(decoded.device),
+      data: {
+        source,
+        rawJid,
+        server: decoded.server,
+      },
+    })
+  }
+  const persistDevicesFromMessageKey = (
+    key?: { remoteJid?: string | null; participant?: string | null; fromMe?: boolean | null },
+    source = 'messages.upsert'
+  ) => {
+    if (!key) return
+    persistUserDeviceFromJid(key.participant ?? null, `${source}:participant`)
+    if (!key.fromMe) {
+      persistUserDeviceFromJid(key.remoteJid ?? null, `${source}:remoteJid`)
+    }
+  }
   const isNewsletterJid = (jid?: string | null): jid is string => Boolean(jid && jid.endsWith('@newsletter'))
   const getNewsletterRetryKey = (message: WAMessage): string | null => {
     const chatJid = message.key?.remoteJid
@@ -521,6 +546,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       logger.debug('evento do Baileys recebido', { event: 'messages.update', count: updates.length })
       const selfJid = resolveSelfJid()
       for (const { key, update } of updates) {
+        persistDevicesFromMessageKey(key, 'messages.update')
         const messageKey = toEventMessageKey(key)
         if (!messageKey) continue
         const chatJid = messageKey.chatJid
@@ -534,6 +560,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       const selfJid = resolveSelfJid()
       for (const item of updates) {
         const key = (item as { key?: { remoteJid?: string | null; id?: string | null; fromMe?: boolean | null; participant?: string | null } }).key
+        persistDevicesFromMessageKey(key, 'messages.media-update')
         const update = (item as { update?: unknown }).update
         const mergedMessage = { key, ...(typeof update === 'object' && update ? (update as object) : {}) } as WAMessage
         void maybeRefreshNewsletterMedia(mergedMessage)
@@ -566,6 +593,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
         if (sqlStore.enabled) {
           const newsletterTasks: Promise<void>[] = []
           for (const message of event.messages) {
+            persistDevicesFromMessageKey(message.key, 'messages.upsert')
             newsletterTasks.push(recordNewsletterFromMessage(message, event.type))
           }
           if (newsletterTasks.length) {

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
+import path from 'node:path'
 import { type AuthenticationCreds, BufferJSON, type GroupMetadata, type WAMessage } from '@whiskeysockets/baileys'
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { loadEnv } from '../../bootstrap/env.js'
@@ -1300,6 +1302,66 @@ async function main() {
     }
   }
 
+  const backfillMessageMediaFromLocalFiles = async () => {
+    if (!config.mediaAutoDownload) return
+
+    type MediaRow = RowDataPacket & {
+      id: number
+      local_path: string | null
+      file_length: number | null
+      file_name: string | null
+    }
+
+    const [rows] = await pool.execute<MediaRow[]>(
+      `SELECT id, local_path, file_length, file_name
+       FROM message_media
+       WHERE connection_id = ?
+         AND local_path IS NOT NULL
+         AND local_path <> ''
+         AND (file_length IS NULL OR file_name IS NULL OR file_name = '')
+       ORDER BY id ASC
+       LIMIT ${BATCH_SIZE}`,
+      [connectionId]
+    )
+
+    let updated = 0
+    for (const row of rows) {
+      const rawPath = normalizeString(row.local_path, { trim: true })
+      if (!rawPath) continue
+      const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath)
+
+      let sizeFromDisk: number | null = null
+      try {
+        const fileStat = await stat(absolutePath)
+        if (fileStat.isFile()) sizeFromDisk = fileStat.size
+      } catch {
+        continue
+      }
+
+      const nameFromPath = path.basename(absolutePath)
+      const nextFileLength = row.file_length ?? sizeFromDisk
+      const nextFileName = row.file_name && row.file_name.trim() ? row.file_name : nameFromPath
+      if (nextFileLength === row.file_length && nextFileName === row.file_name) continue
+
+      const [result] = await pool.execute<ResultSetHeader>(
+        `UPDATE message_media
+         SET file_length = COALESCE(file_length, ?),
+             file_name = CASE
+               WHEN file_name IS NULL OR file_name = '' THEN ?
+               ELSE file_name
+             END
+         WHERE connection_id = ?
+           AND id = ?`,
+        [nextFileLength, nextFileName, connectionId, row.id]
+      )
+      updated += result.affectedRows
+    }
+
+    if (updated > 0) {
+      logger.info('backfill atualizado', { item: 'message_media.local_file_metadata', affected: updated })
+    }
+  }
+
   async function runCycle() {
     const runStep = async (stepName: string, step: () => Promise<void>) => {
       const startedAt = Date.now()
@@ -1333,6 +1395,7 @@ async function main() {
       await runStep('label_associations', backfillLabelAssociations)
       await runStep('blocklist', backfillBlocklist)
       await runStep('newsletter_events', backfillNewsletterEvents)
+      await runStep('message_media_local_files', backfillMessageMediaFromLocalFiles)
       await runStep('events_log', backfillEventsLog)
       await runStep('messages_sender_bulk', async () => {
         const [msgUpdate] = await pool!.execute<ResultSetHeader>(
