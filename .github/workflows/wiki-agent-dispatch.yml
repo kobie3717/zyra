@@ -1,79 +1,61 @@
-name: Wiki Agent Dispatch
+name: Wiki Auto Sync
 
 on:
   workflow_dispatch:
     inputs:
-      agent:
-        description: "Agente a acionar"
-        required: true
-        default: "wiki-maintainer"
-        type: choice
-        options:
-          - wiki-maintainer
-          - wiki-runbook-writer
-      task:
-        description: "Tarefa para o agente executar"
-        required: true
-        default: "Sincronize a wiki com as mudanças recentes do código e atualize Home/Sidebar/Footer se necessário."
-        type: string
-      branch:
-        description: "Branch alvo para análise do agente"
+      commit_message:
+        description: "Mensagem de commit para a wiki"
         required: false
-        default: "master"
+        default: "docs(wiki): sincroniza conteúdo a partir de docs/wiki"
         type: string
   schedule:
     - cron: "0 9 * * 1"
+  push:
+    branches: [ master ]
+    paths:
+      - "docs/wiki/**"
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
 
 jobs:
-  dispatch-agent:
+  sync-wiki:
     runs-on: ubuntu-latest
     steps:
-      - name: Build default task (scheduled run)
-        id: defaults
-        run: |
-          echo "agent=wiki-maintainer" >> "$GITHUB_OUTPUT"
-          echo "branch=master" >> "$GITHUB_OUTPUT"
-          echo "task=Execute manutenção semanal da wiki: revisar páginas técnicas, validar consistência de links e atualizar runbooks de produção/troubleshooting conforme mudanças recentes." >> "$GITHUB_OUTPUT"
-
-      - name: Create issue to trigger Copilot agent
-        uses: actions/github-script@v7
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          script: |
-            const isManual = context.eventName === 'workflow_dispatch'
-            const inputAgent = isManual ? core.getInput('agent') : '${{ steps.defaults.outputs.agent }}'
-            const inputTask = isManual ? core.getInput('task') : '${{ steps.defaults.outputs.task }}'
-            const inputBranch = isManual ? core.getInput('branch') : '${{ steps.defaults.outputs.branch }}'
+          fetch-depth: 0
 
-            const title = `[Wiki Agent] ${inputAgent} - ${new Date().toISOString().slice(0, 10)}`
-            const body = [
-              `@copilot use o agente \`${inputAgent}\` para executar esta tarefa.`,
-              ``,
-              `## Tarefa`,
-              inputTask,
-              ``,
-              `## Contexto`,
-              `- Repositório: ${context.repo.owner}/${context.repo.repo}`,
-              `- Branch alvo: ${inputBranch || 'master'}`,
-              `- Workflow: ${context.workflow}`,
-              `- Execução: ${context.runId}`,
-              ``,
-              `## Critérios de aceite`,
-              `1. Atualizar documentação impactada com base no código atual.`,
-              `2. Manter consistência entre Home, _Sidebar e _Footer.`,
-              `3. Propor/abrir PR com resumo técnico das mudanças.`,
-            ].join('\n')
+      - name: Publish docs/wiki to GitHub Wiki
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_MESSAGE_INPUT: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
 
-            const { data } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body,
-              labels: ['documentation', 'wiki', 'copilot']
-            })
+          if [ ! -d "docs/wiki" ]; then
+            echo "Diretório docs/wiki não encontrado. Nada para sincronizar."
+            exit 0
+          fi
 
-            core.notice(`Issue criada para acionar agente: ${data.html_url}`)
+          COMMIT_MESSAGE="${COMMIT_MESSAGE_INPUT:-docs(wiki): sincroniza conteúdo a partir de docs/wiki}"
 
+          rm -rf .wiki-tmp
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.wiki.git" .wiki-tmp
+
+          rsync -av --delete --exclude '.git' docs/wiki/ .wiki-tmp/
+
+          cd .wiki-tmp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Nenhuma mudança para publicar na wiki."
+            exit 0
+          fi
+
+          git add .
+          git commit -m "${COMMIT_MESSAGE}"
+          git push origin master
