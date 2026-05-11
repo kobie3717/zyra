@@ -1,4 +1,4 @@
-name: Wiki Copilot Agent
+name: Wiki Copilot Dispatch
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: wiki-copilot-agent
+  group: wiki-copilot-dispatch
   cancel-in-progress: false
 
 jobs:
@@ -83,3 +83,4 @@ Issue de orquestração para tarefas automáticas da wiki via agentes do Copilot
             })
 
             core.notice(`Copilot acionado na issue #${target.number}: ${target.html_url}`)
+
