@@ -1,4 +1,6 @@
 import { type WAMessage, type WASocket, type proto } from '@whiskeysockets/baileys'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { commands } from '../../commands/index.js'
 import type { AppLogger } from '../../observability/logger.js'
 import type { SqlStore } from '../../store/sql-store.js'
@@ -253,6 +255,29 @@ const createRuntimeContext = (
     isGroup: context.isGroup,
   })
 
+  const resolveStickerSourceFromLocalCache = async (message: WAMessage): Promise<{ buffer: Buffer; mediaType: 'sticker' } | null> => {
+    if (!config.mediaAutoDownload || !sqlStore.enabled) return null
+    const chatJid = message.key.remoteJid
+    const messageId = message.key.id
+    if (!chatJid || !messageId) return null
+    const stored = await sqlStore.getLocalMediaByMessageKey({
+      chatJid,
+      messageId,
+      fromMe: Boolean(message.key.fromMe),
+    })
+    if (!stored || stored.mediaType !== 'stickerMessage') return null
+    try {
+      const absolutePath = path.isAbsolute(stored.localPath)
+        ? stored.localPath
+        : path.resolve(process.cwd(), stored.localPath)
+      const buffer = await fs.readFile(absolutePath)
+      if (!buffer.length) return null
+      return { buffer, mediaType: 'sticker' }
+    } catch {
+      return null
+    }
+  }
+
   const send = async (content: Parameters<CommandContext['send']>[0], options?: CommandSendOptions) => {
     const { quote = true, ...sendOptions } = options ?? {}
     const finalOptions = quote ? { quoted: context.message, ...sendOptions } : sendOptions
@@ -317,17 +342,23 @@ const createRuntimeContext = (
     resolveStickerSourceMedia: async () => {
       const directSource = await resolveStickerSourceMediaFromMessage(context.message)
       if (directSource) return directSource
+      const localDirectSource = await resolveStickerSourceFromLocalCache(context.message)
+      if (localDirectSource) return localDirectSource
       const quotedStanzaId = extractQuotedStanzaIdFromMessage(context.message)
       if (quotedStanzaId) {
         const quotedMessage = getRecentMessageById(context.chatId, quotedStanzaId)
         if (quotedMessage) {
           const quotedSource = await resolveStickerSourceMediaFromMessage(quotedMessage)
           if (quotedSource) return quotedSource
+          const localQuotedSource = await resolveStickerSourceFromLocalCache(quotedMessage)
+          if (localQuotedSource) return localQuotedSource
         }
       }
       const fallbackMessage = getRecentStickerMessage(context.chatId)
       if (!fallbackMessage) return null
-      return resolveStickerSourceMediaFromMessage(fallbackMessage)
+      const fallbackSource = await resolveStickerSourceMediaFromMessage(fallbackMessage)
+      if (fallbackSource) return fallbackSource
+      return resolveStickerSourceFromLocalCache(fallbackMessage)
     },
     saveStickerTemplate: async (templateText) => {
       if (!sqlStore.enabled) return

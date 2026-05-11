@@ -258,6 +258,7 @@ export type SqlStore = {
   deleteChatUser: (chatJid: string, userJid: string) => Promise<void>
   setLabel: (label: { id: string; name?: string | null; color?: string | null; data?: unknown; actorJid?: string | null }) => Promise<void>
   setLabelAssociation: (association: { labelId: string; associationType: 'chat' | 'message' | 'contact' | 'group'; chatJid?: string | null; messageKey?: { chatJid: string; messageId: string; fromMe: boolean } | null; targetJid?: string | null; actorJid?: string | null; data?: unknown }) => Promise<void>
+  getLocalMediaByMessageKey: (key: { chatJid: string; messageId: string; fromMe: boolean }) => Promise<{ localPath: string; mediaType: string; mimeType: string | null } | null>
 }
 
 /**
@@ -304,6 +305,7 @@ export function createSqlStore(connectionId?: string): SqlStore {
       deleteChatUser: async () => undefined,
       setLabel: async () => undefined,
       setLabelAssociation: async () => undefined,
+      getLocalMediaByMessageKey: async () => null,
     }
   }
 
@@ -629,6 +631,64 @@ export function createSqlStore(connectionId?: string): SqlStore {
     }
   }
 
+  const summarizeMediaNode = (value: unknown): {
+    hasUrl: boolean
+    hasDirectPath: boolean
+    hasMediaKey: boolean
+    mediaKeyLength: number | null
+    urlHost: string | null
+    directPathPrefix: string | null
+    mediaKeyTimestamp: string | null
+    isAnimated: boolean | null
+  } => {
+    if (!value || typeof value !== 'object') {
+      return {
+        hasUrl: false,
+        hasDirectPath: false,
+        hasMediaKey: false,
+        mediaKeyLength: null,
+        urlHost: null,
+        directPathPrefix: null,
+        mediaKeyTimestamp: null,
+        isAnimated: null,
+      }
+    }
+    const node = value as {
+      url?: string | null
+      directPath?: string | null
+      mediaKey?: Uint8Array | Buffer | null
+      mediaKeyTimestamp?: unknown
+      isAnimated?: boolean | null
+    }
+    const url = typeof node.url === 'string' ? node.url : null
+    const directPath = typeof node.directPath === 'string' ? node.directPath : null
+    const mediaKey = node.mediaKey as { byteLength?: number; length?: number } | null | undefined
+    const mediaKeyLength =
+      typeof mediaKey?.byteLength === 'number' ? mediaKey.byteLength
+        : typeof mediaKey?.length === 'number' ? mediaKey.length
+          : null
+    let urlHost: string | null = null
+    if (url) {
+      try {
+        urlHost = new URL(url).host
+      } catch {
+        urlHost = null
+      }
+    }
+    return {
+      hasUrl: Boolean(url),
+      hasDirectPath: Boolean(directPath),
+      hasMediaKey: mediaKeyLength !== null && mediaKeyLength > 0,
+      mediaKeyLength,
+      urlHost,
+      directPathPrefix: directPath ? directPath.slice(0, 80) : null,
+      mediaKeyTimestamp: node.mediaKeyTimestamp !== undefined && node.mediaKeyTimestamp !== null
+        ? String(node.mediaKeyTimestamp)
+        : null,
+      isAnimated: typeof node.isAnimated === 'boolean' ? node.isAnimated : null,
+    }
+  }
+
   const getMessageDbId = async (pool: NonNullable<ReturnType<typeof getMysqlPool>>, key: { chatJid: string; messageId: string; fromMe: number }): Promise<number | null> => {
     const chatJid = normalizeJid(key.chatJid)
     const messageId = normalizeMessageId(key.messageId)
@@ -927,13 +987,28 @@ export function createSqlStore(connectionId?: string): SqlStore {
                       connectionId: resolvedConnectionId,
                     })
                   } catch (error) {
+                    const mediaNodeSummary = summarizeMediaNode(mediaInfo.data)
                     getStoreLogger().warn('falha ao baixar midia para disco local', {
                       err: error,
                       action: 'downloadIncomingMediaToDisk',
                       connectionId: resolvedConnectionId,
+                      chatJid,
                       messageId,
                       messageDbId,
+                      fromMe: Boolean(key.fromMe),
+                      sender: message.key?.participant ?? chatJid,
+                      pushName: message.pushName ?? null,
+                      messageTimestamp: toNumber(message.messageTimestamp),
+                      contentType: normalized.type ? String(normalized.type) : null,
                       mediaType: mediaInfo.mediaType,
+                      mimeType: mediaInfo.mimeType,
+                      mediaUrlPrefix: mediaInfo.url ? mediaInfo.url.slice(0, 160) : null,
+                      fileName: mediaInfo.fileName,
+                      fileLength: mediaInfo.fileLength,
+                      fileSha256: mediaInfo.fileSha256,
+                      quotedJid,
+                      mentionedCount: mentionedJids.length,
+                      mediaNode: mediaNodeSummary,
                     })
                   }
                 }
@@ -2048,6 +2123,44 @@ export function createSqlStore(connectionId?: string): SqlStore {
           )
         },
         undefined,
+        { ensureConnection: true }
+      ),
+    getLocalMediaByMessageKey: async (key) =>
+      safe(
+        async (pool) => {
+          const normalizedChat = normalizeJid(key.chatJid)
+          const normalizedMessageId = normalizeMessageId(key.messageId)
+          if (!normalizedChat || !normalizedMessageId) return null
+
+          type MediaRow = RowDataPacket & {
+            local_path: string | null
+            media_type: string
+            mime_type: string | null
+          }
+
+          const [rows] = await pool.execute<MediaRow[]>(
+            `SELECT mm.local_path, mm.media_type, mm.mime_type
+             FROM messages m
+             INNER JOIN message_media mm
+               ON mm.connection_id = m.connection_id
+              AND mm.message_db_id = m.id
+             WHERE m.connection_id = ?
+               AND m.chat_jid = ?
+               AND m.message_id = ?
+               AND m.from_me = ?
+             ORDER BY mm.id DESC
+             LIMIT 1`,
+            [resolvedConnectionId, normalizedChat, normalizedMessageId, key.fromMe ? 1 : 0]
+          )
+          const row = rows[0]
+          if (!row?.local_path) return null
+          return {
+            localPath: row.local_path,
+            mediaType: row.media_type,
+            mimeType: row.mime_type,
+          }
+        },
+        null,
         { ensureConnection: true }
       ),
   }
