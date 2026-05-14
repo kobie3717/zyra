@@ -93,9 +93,9 @@ describe('antiban helper', () => {
       sock,
       expect.objectContaining({
         logging: false,
-        maxPerMinute: 8,
-        maxPerHour: 200,
-        maxPerDay: 1500,
+        maxPerMinute: 160,
+        maxPerHour: 4000,
+        maxPerDay: 30000,
         maxIdenticalMessages: 200,
         identicalMessageWindowMs: 60000,
         burstAllowance: 20,
