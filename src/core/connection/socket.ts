@@ -204,7 +204,7 @@ const registerGracefulShutdown = () => {
     } finally {
       if (forceExit) clearTimeout(forceExit)
     }
-    // Optional: process.exit(0) if this is the only service
+    process.exit(0)
   }
 
   process.once('SIGINT', () => void handler('SIGINT'))
