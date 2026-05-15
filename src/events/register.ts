@@ -197,7 +197,10 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
     const now = Date.now()
     const retryState = newsletterMediaRetryState.get(retryKey)
     if (retryState) {
-      if (retryState.attempts >= NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS) return
+      if (retryState.attempts >= NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS) {
+        newsletterMediaRetryState.delete(retryKey)
+        return
+      }
       if (retryState.nextAttemptAt > now) return
     }
     const nextAttempt = (retryState?.attempts ?? 0) + 1
