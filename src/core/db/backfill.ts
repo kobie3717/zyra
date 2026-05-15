@@ -53,6 +53,8 @@ const readNumberEnv = (key: string, fallback: number, options: NumberEnvOptions 
 const BATCH_SIZE = readNumberEnv('WA_BACKFILL_BATCH_SIZE', 500)
 const WORKER_INTERVAL_MS = readNumberEnv('WA_BACKFILL_INTERVAL_MS', 30000, { min: 5000 })
 const MAX_PASSES_PER_CYCLE = readNumberEnv('WA_BACKFILL_MAX_PASSES', 20, { min: 1 })
+const MAX_CONSECUTIVE_FAILURES = readNumberEnv('WA_BACKFILL_MAX_FAILURES', 5, { min: 1 })
+const FAILURE_BACKOFF_MS = readNumberEnv('WA_BACKFILL_FAILURE_BACKOFF_MS', 60_000, { min: 1_000 })
 
 const logAffected = (label: string, result: ResultSetHeader) => {
   if (result.affectedRows) {
@@ -161,16 +163,29 @@ const cacheUserId = (userId: string, identifiers: Array<{ type: string; value: s
 async function main() {
   if (!config.mysqlUrl) {
     logger.error('MYSQL_URL nao configurada')
-    process.exitCode = 1
-    return
+    process.exit(1)
   }
 
   const pool = getMysqlPool()
   if (!pool) {
     logger.error('Pool MySQL nao iniciado')
-    process.exitCode = 1
-    return
+    process.exit(1)
   }
+
+  let shuttingDown = false
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    logger.warn('backfill: encerrando por sinal', { signal })
+    try {
+      await pool.end()
+    } catch (error) {
+      logger.error('backfill: falha ao fechar pool MySQL', { err: error })
+    }
+    process.exit(0)
+  }
+  process.once('SIGTERM', () => void shutdown('SIGTERM'))
+  process.once('SIGINT', () => void shutdown('SIGINT'))
 
   await ensureMysqlConnection(pool)
 
@@ -1491,9 +1506,23 @@ async function main() {
   }
 
   // Worker Loop
+  let consecutiveFailures = 0
   while (true) {
+    if (shuttingDown) break
     const start = Date.now()
-    await runCycle()
+    try {
+      await runCycle()
+      consecutiveFailures = 0
+    } catch (error) {
+      consecutiveFailures++
+      logger.error('backfill ciclo falhou', { err: error, consecutiveFailures, maxFailures: MAX_CONSECUTIVE_FAILURES })
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        logger.error('backfill: falhas consecutivas excedidas, encerrando', { consecutiveFailures })
+        throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, FAILURE_BACKOFF_MS))
+      continue
+    }
     const duration = Date.now() - start
     const wait = Math.max(1000, WORKER_INTERVAL_MS - duration)
     await new Promise(resolve => setTimeout(resolve, wait))
@@ -1502,5 +1531,5 @@ async function main() {
 
 main().catch((error) => {
   logger.error('falha fatal no backfill', { err: error })
-  process.exitCode = 1
+  process.exit(1)
 })
