@@ -150,14 +150,14 @@ describe('socket', () => {
     ev.emit('connection.update', { connection: 'open', isNewLogin: true })
     expect(createHistorySyncPolicyMock).toHaveBeenCalledTimes(1)
     expect(createHistorySyncPolicyMock.mock.results[0]?.value?.allowOnceForNewLogin).toHaveBeenCalled()
-    expect(logger.info).toHaveBeenCalledWith('status da conexao: aberta', { connectionId: 'conn' })
+    expect(logger.info).toHaveBeenCalledWith('connection status: open', { connectionId: 'conn' })
 
     ev.emit('connection.update', {
       connection: 'close',
       lastDisconnect: { error: { output: { statusCode: DisconnectReason.loggedOut } } },
     })
     expect(store.setSelfJid).toHaveBeenCalledWith(null)
-    expect(logger.error).toHaveBeenCalledWith('sessao invalidada/removida, requer re-pareamento', { connectionId: 'conn' })
+    expect(logger.error).toHaveBeenCalledWith('session invalidated/removed, requires re-pairing', { connectionId: 'conn' })
 
     ev.emit('creds.update')
     await Promise.resolve()
