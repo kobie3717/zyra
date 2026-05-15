@@ -4,6 +4,7 @@ import type { AppLogger } from './logger.js'
 
 const HEALTH_PATH = '/health'
 const READY_PATH = '/ready'
+const METRICS_PATH = '/metrics'
 
 type HealthState = {
   connected: boolean
@@ -36,6 +37,25 @@ const jsonResponse = (res: ServerResponse, statusCode: number, body: object) => 
   res.end(JSON.stringify(body))
 }
 
+const renderConnectionMetrics = ({ connected, socketGeneration, reconnectAttempt }: HealthState): string => {
+  const uptime = Math.floor(process.uptime())
+  return [
+    '# HELP zyra_connected WhatsApp connection state (1=connected, 0=disconnected)',
+    '# TYPE zyra_connected gauge',
+    `zyra_connected ${connected ? 1 : 0}`,
+    '# HELP zyra_socket_generation Total socket creations since process start',
+    '# TYPE zyra_socket_generation counter',
+    `zyra_socket_generation ${socketGeneration}`,
+    '# HELP zyra_reconnect_attempt Current reconnect backoff attempt (0 when stable)',
+    '# TYPE zyra_reconnect_attempt gauge',
+    `zyra_reconnect_attempt ${reconnectAttempt}`,
+    '# HELP zyra_uptime_seconds Process uptime in seconds',
+    '# TYPE zyra_uptime_seconds gauge',
+    `zyra_uptime_seconds ${uptime}`,
+    '',
+  ].join('\n')
+}
+
 export function startHealthServer({ logger, getState }: StartHealthServerOptions): HealthServerHandle {
   if (!config.healthEnabled) {
     return { stop: async () => undefined }
@@ -43,7 +63,8 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
 
   const server: Server = createServer((req, res) => {
     const path = getPath(req)
-    const { connected, socketGeneration, reconnectAttempt } = getState()
+    const state = getState()
+    const { connected, socketGeneration, reconnectAttempt } = state
 
     if (path === HEALTH_PATH) {
       jsonResponse(res, 200, {
@@ -65,6 +86,13 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
       return
     }
 
+    if (path === METRICS_PATH) {
+      res.statusCode = 200
+      res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8')
+      res.end(renderConnectionMetrics(state))
+      return
+    }
+
     notFound(res)
   })
 
@@ -74,6 +102,7 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
       port: config.healthPort,
       healthPath: HEALTH_PATH,
       readyPath: READY_PATH,
+      metricsPath: METRICS_PATH,
     })
   })
 

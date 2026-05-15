@@ -140,4 +140,42 @@ describe('health-server', () => {
 
     await expect(httpGet(19111)).rejects.toThrow()
   })
+
+  it('GET /metrics returns Prometheus gauges for connection state', async () => {
+    mockConfig.healthPort = 19115
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const getState = () => ({ connected: true, socketGeneration: 2, reconnectAttempt: 0 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19115, '/metrics')
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('zyra_connected 1')
+    expect(res.body).toContain('zyra_socket_generation 2')
+    expect(res.body).toContain('zyra_reconnect_attempt 0')
+    expect(res.body).toContain('zyra_uptime_seconds')
+    expect(res.body).toContain('# TYPE zyra_connected gauge')
+
+    await handle.stop()
+  })
+
+  it('GET /metrics reflects disconnected state', async () => {
+    mockConfig.healthPort = 19116
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const getState = () => ({ connected: false, socketGeneration: 4, reconnectAttempt: 3 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19116, '/metrics')
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('zyra_connected 0')
+    expect(res.body).toContain('zyra_socket_generation 4')
+    expect(res.body).toContain('zyra_reconnect_attempt 3')
+
+    await handle.stop()
+  })
 })
