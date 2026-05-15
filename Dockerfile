@@ -6,7 +6,7 @@ WORKDIR /build
 # Install build deps for native modules (libsignal, mysql2, canvas)
 RUN apk add --no-cache python3 make g++ cairo-dev pango-dev libjpeg-turbo-dev giflib-dev
 
-COPY package*.json .npmrc ./
+COPY package*.json .npmrc patches/ ./
 # postinstall runs patch-package automatically
 RUN npm ci
 
@@ -17,13 +17,18 @@ RUN npm run build
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runtime
 
-RUN apk add --no-cache python3 make g++ cairo-dev pango-dev libjpeg-turbo-dev giflib-dev && \
+# Runtime libs for canvas (cairo/pango); no build tools needed since
+# node_modules are copied pre-compiled from the builder stage.
+RUN apk add --no-cache cairo pango libjpeg-turbo giflib && \
     addgroup -S zyra && adduser -S zyra -G zyra
 
 WORKDIR /app
 
-COPY package*.json .npmrc patches/ ./
-RUN npm ci --omit=dev
+# Copy pre-built node_modules (patches already applied) and prune dev deps.
+# Avoids re-running npm ci in runtime, so patch-package (devDep) is not needed.
+COPY package*.json ./
+COPY --from=builder /build/node_modules ./node_modules
+RUN npm prune --omit=dev --ignore-scripts
 
 COPY --from=builder /build/dist ./dist/
 
