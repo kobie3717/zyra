@@ -8,14 +8,22 @@ import { startAntiBanMetricsServer } from '../observability/antiban-metrics.js'
 import { startHealthServer } from '../observability/health-server.js'
 
 let loggerRef: AppLogger | null = null
-const RECONNECT_MIN_DELAY_MS = Math.max(500, Number(process.env.WA_RECONNECT_MIN_DELAY_MS ?? 2500))
 let schemaInitPromise: Promise<void> | null = null
 let reconnectPromise: Promise<void> | null = null
 let activeSocket: WASocket | null = null
 let socketGeneration = 0
-let lastReconnectAt = 0
+let reconnectAttempt = 0
 let metricsServerHandle: { stop: () => Promise<void> } | null = null
 let healthServerHandle: { stop: () => Promise<void> } | null = null
+
+const computeReconnectDelay = (attempt: number): number => {
+  if (attempt <= 1) return 0
+  const base = config.reconnectBaseDelayMs
+  const max = config.reconnectMaxDelayMs
+  const exponential = base * Math.pow(2, attempt - 2)
+  const jitter = Math.floor(Math.random() * Math.max(1, base * 0.25))
+  return Math.min(max, Math.floor(exponential + jitter))
+}
 
 const getLogger = (): AppLogger => {
   if (!loggerRef) {
@@ -89,7 +97,15 @@ const replaceSocket = async (reason: string) => {
     await scheduleReconnect(`connection_close_generation_${generation}`)
   }
 
-  registerEvents({ sock, logger, reconnect: reconnectFromThisSocket, connectionId })
+  registerEvents({
+    sock,
+    logger,
+    reconnect: reconnectFromThisSocket,
+    connectionId,
+    onConnected: () => {
+      reconnectAttempt = 0
+    },
+  })
   logger.info('Bot started successfully.', { connectionId, generation, reason })
 }
 
@@ -105,14 +121,23 @@ const scheduleReconnect = async (reason: string) => {
   }
 
   reconnectPromise = (async () => {
-    const elapsedSinceLastReconnect = Date.now() - lastReconnectAt
-    const waitMs = Math.max(0, RECONNECT_MIN_DELAY_MS - elapsedSinceLastReconnect)
-    if (waitMs > 0) {
-      logger.info('waiting minimum window before reconnecting', { waitMs, reason })
-      await wait(waitMs)
+    const attempt = ++reconnectAttempt
+    const maxAttempts = config.reconnectMaxAttempts
+    if (maxAttempts > 0 && attempt > maxAttempts) {
+      logger.error('reconnect max attempts reached, giving up', { attempt, maxAttempts, reason })
+      process.exit(1)
+    }
+    const delayMs = computeReconnectDelay(attempt)
+    if (delayMs > 0) {
+      logger.info('waiting before reconnecting', {
+        delayMs,
+        attempt,
+        maxAttempts: maxAttempts || 'unlimited',
+        reason,
+      })
+      await wait(delayMs)
     }
     await replaceSocket(reason)
-    lastReconnectAt = Date.now()
   })().finally(() => {
     reconnectPromise = null
   })
