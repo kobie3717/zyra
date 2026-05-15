@@ -164,7 +164,10 @@ export async function start(): Promise<void> {
     registerShutdownHook(() => metricsServerHandle!.stop())
   }
   if (!healthServerHandle) {
-    healthServerHandle = startHealthServer({ logger, getState: () => ({ connected: waConnected }) })
+    healthServerHandle = startHealthServer({
+      logger,
+      getState: () => ({ connected: waConnected, socketGeneration, reconnectAttempt }),
+    })
     registerShutdownHook(() => healthServerHandle!.stop())
   }
   await scheduleReconnect('startup')

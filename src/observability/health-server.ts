@@ -7,6 +7,10 @@ const READY_PATH = '/ready'
 
 type HealthState = {
   connected: boolean
+  /** Total socket creations since process start (increments on each reconnect). */
+  socketGeneration: number
+  /** Current reconnect attempt counter, 0 when connected and stable. */
+  reconnectAttempt: number
 }
 
 type StartHealthServerOptions = {
@@ -39,18 +43,24 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
 
   const server: Server = createServer((req, res) => {
     const path = getPath(req)
-    const { connected } = getState()
+    const { connected, socketGeneration, reconnectAttempt } = getState()
 
     if (path === HEALTH_PATH) {
-      jsonResponse(res, 200, { status: 'ok', connected, uptime: Math.floor(process.uptime()) })
+      jsonResponse(res, 200, {
+        status: 'ok',
+        connected,
+        uptime: Math.floor(process.uptime()),
+        socketGeneration,
+        reconnectAttempt,
+      })
       return
     }
 
     if (path === READY_PATH) {
       if (connected) {
-        jsonResponse(res, 200, { status: 'ready', connected: true })
+        jsonResponse(res, 200, { status: 'ready', connected: true, socketGeneration, reconnectAttempt })
       } else {
-        jsonResponse(res, 503, { status: 'not ready', connected: false })
+        jsonResponse(res, 503, { status: 'not ready', connected: false, socketGeneration, reconnectAttempt })
       }
       return
     }
