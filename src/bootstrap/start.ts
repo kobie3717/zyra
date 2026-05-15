@@ -1,6 +1,6 @@
 import type { WASocket } from 'baileys'
 import { createLogger, type AppLogger } from '../observability/logger.js'
-import { createSocket, isShutdownInProgress, unregisterShutdownTarget } from '../core/connection/socket.js'
+import { createSocket, isShutdownInProgress, registerShutdownHook, unregisterShutdownTarget } from '../core/connection/socket.js'
 import { registerEvents } from '../events/register.js'
 import { initMysqlSchema } from '../core/db/init.js'
 import { config } from '../config/index.js'
@@ -130,9 +130,11 @@ export async function start(): Promise<void> {
       logger,
       getStats: () => (activeSocket as { antiban?: { getStats?: () => unknown } } | null)?.antiban?.getStats?.() ?? {},
     })
+    registerShutdownHook(() => metricsServerHandle!.stop())
   }
   if (!healthServerHandle) {
     healthServerHandle = startHealthServer(logger)
+    registerShutdownHook(() => healthServerHandle!.stop())
   }
   await scheduleReconnect('startup')
 }
