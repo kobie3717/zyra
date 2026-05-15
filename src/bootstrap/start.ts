@@ -13,6 +13,7 @@ let reconnectPromise: Promise<void> | null = null
 let activeSocket: WASocket | null = null
 let socketGeneration = 0
 let reconnectAttempt = 0
+let waConnected = false
 let metricsServerHandle: { stop: () => Promise<void> } | null = null
 let healthServerHandle: { stop: () => Promise<void> } | null = null
 
@@ -82,6 +83,7 @@ const replaceSocket = async (reason: string) => {
     }
   }
 
+  waConnected = false
   const sock = await createSocket(connectionId, logger)
   activeSocket = sock
 
@@ -104,6 +106,10 @@ const replaceSocket = async (reason: string) => {
     connectionId,
     onConnected: () => {
       reconnectAttempt = 0
+      waConnected = true
+    },
+    onDisconnected: () => {
+      waConnected = false
     },
   })
   logger.info('Bot started successfully.', { connectionId, generation, reason })
@@ -158,7 +164,7 @@ export async function start(): Promise<void> {
     registerShutdownHook(() => metricsServerHandle!.stop())
   }
   if (!healthServerHandle) {
-    healthServerHandle = startHealthServer(logger)
+    healthServerHandle = startHealthServer({ logger, getState: () => ({ connected: waConnected }) })
     registerShutdownHook(() => healthServerHandle!.stop())
   }
   await scheduleReconnect('startup')
