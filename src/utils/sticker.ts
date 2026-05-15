@@ -44,11 +44,12 @@ function runProcess(command: string, args: string[], timeoutMs: number): Promise
     let stdout = ''
     let stderr = ''
     let timedOut = false
+    let killTimerRef: NodeJS.Timeout | null = null
 
     const timeoutRef = setTimeout(() => {
       timedOut = true
       safeKill(child, 'SIGTERM')
-      setTimeout(() => safeKill(child, 'SIGKILL'), 1500)
+      killTimerRef = setTimeout(() => safeKill(child, 'SIGKILL'), 1500)
     }, timeoutMs)
 
     child.stdout.on('data', (chunk) => {
@@ -60,11 +61,13 @@ function runProcess(command: string, args: string[], timeoutMs: number): Promise
 
     child.on('error', (error) => {
       clearTimeout(timeoutRef)
+      if (killTimerRef) { clearTimeout(killTimerRef); killTimerRef = null }
       reject(error)
     })
 
     child.on('close', (code) => {
       clearTimeout(timeoutRef)
+      if (killTimerRef) { clearTimeout(killTimerRef); killTimerRef = null }
 
       if (timedOut) {
         reject(new Error(`${command} excedeu o timeout de ${timeoutMs}ms.`))
