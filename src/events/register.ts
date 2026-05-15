@@ -21,6 +21,8 @@ type RegisterOptions = {
   connectionId: string
   /** Called when connection reaches the 'open' state — used to reset backoff counters. */
   onConnected?: () => void
+  /** Called when connection reaches the 'close' state — used to update readiness state. */
+  onDisconnected?: () => void
 }
 
 /**
@@ -88,7 +90,7 @@ type EventHandler<K extends keyof BaileysEventMap> = (data: BaileysEventMap[K]) 
  * 
  * @param options Opções de configuração contendo o socket, logger e callbacks de ciclo de vida.
  */
-export function registerEvents({ sock, logger, reconnect, connectionId, onConnected }: RegisterOptions): void {
+export function registerEvents({ sock, logger, reconnect, connectionId, onConnected, onDisconnected }: RegisterOptions): void {
   const socketWithCredsFlush = sock as SocketWithCredsFlush
   const socketWithNewsletterMetadata = sock as SocketWithNewsletterMetadata
   const sqlStore = createSqlStore(connectionId)
@@ -405,6 +407,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
       )
 
       if (connection === 'close') {
+        onDisconnected?.()
         const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut
         const restartRequired = statusCode === DisconnectReason.restartRequired
