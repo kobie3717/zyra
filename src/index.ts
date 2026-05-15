@@ -120,6 +120,7 @@ const validateEnvironment = (): ValidationResult => {
   ensurePositiveNumber('WA_RECONNECT_MAX_DELAY_MS')
   ensurePositiveNumber('WA_RECONNECT_MAX_ATTEMPTS')
   ensurePositiveNumber('WA_VERSION_CACHE_TTL_MS')
+  ensurePositiveNumber('WA_MAX_CACHED_MESSAGES')
 
   if (!config.connectionId.trim()) {
     errors.push('WA_CONNECTION_ID cannot be empty.')

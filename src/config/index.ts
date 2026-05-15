@@ -266,6 +266,10 @@ export const config = {
   get reconnectMaxAttempts() {
     return readNumber(process.env.WA_RECONNECT_MAX_ATTEMPTS, 0)
   },
+  /** Maximum number of messages kept in the in-memory cache, 0 = unlimited (WA_MAX_CACHED_MESSAGES). */
+  get maxCachedMessages() {
+    return readNumber(process.env.WA_MAX_CACHED_MESSAGES, 10_000)
+  },
   /** Enables HTTP /health endpoint for liveness probes (WA_HEALTH_ENABLED). */
   get healthEnabled() {
     return readBoolean(process.env.WA_HEALTH_ENABLED, true)
