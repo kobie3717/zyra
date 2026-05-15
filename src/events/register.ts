@@ -92,11 +92,11 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
   const sqlStore = createSqlStore(connectionId)
   let restartedAfterNewLogin = false
   const newsletterMetadataSync = new Map<string, { nextAttemptAt: number; inFlight?: Promise<void> }>()
-  const NEWSLETTER_METADATA_SYNC_TTL_MS = 5 * 60_000
-  const NEWSLETTER_METADATA_RETRY_TTL_MS = 30 * 1000
+  const NEWSLETTER_METADATA_SYNC_TTL_MS = config.newsletterMetadataSyncTtlMs
+  const NEWSLETTER_METADATA_RETRY_TTL_MS = config.newsletterMetadataRetryTtlMs
   const newsletterMediaRetryState = new Map<string, { attempts: number; nextAttemptAt: number; lastError?: string | null }>()
-  const NEWSLETTER_MEDIA_RETRY_BASE_MS = 10_000
-  const NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS = 5
+  const NEWSLETTER_MEDIA_RETRY_BASE_MS = config.newsletterMediaRetryBaseMs
+  const NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS = config.newsletterMediaRetryMaxAttempts
   type EventContext = {
     actorJid?: string | null
     targetJid?: string | null

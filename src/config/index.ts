@@ -200,6 +200,10 @@ export const config = {
   get antibanMetricsPort() {
     return readNumber(process.env.WA_ANTIBAN_METRICS_PORT, 9108)
   },
+  /** TTL do cache da versão do protocolo WhatsApp (WA_VERSION_CACHE_TTL_MS). */
+  get versionCacheTtlMs() {
+    return readNumber(process.env.WA_VERSION_CACHE_TTL_MS, 24 * 60 * 60 * 1000)
+  },
   /** Path HTTP para exposição das métricas. */
   get antibanMetricsPath() {
     const value = (process.env.WA_ANTIBAN_METRICS_PATH ?? '/metrics').trim()
@@ -221,5 +225,29 @@ export const config = {
   /** Quantidade de dias para retenção de mídias locais (WA_MEDIA_RETENTION_DAYS). */
   get mediaRetentionDays() {
     return readNumber(process.env.WA_MEDIA_RETENTION_DAYS, 7)
+  },
+  /** TTL em ms para cache de metadados de newsletter (WA_NEWSLETTER_METADATA_SYNC_TTL_MS). */
+  get newsletterMetadataSyncTtlMs() {
+    return readNumber(process.env.WA_NEWSLETTER_METADATA_SYNC_TTL_MS, 5 * 60_000)
+  },
+  /** TTL em ms para retry de metadados de newsletter após falha (WA_NEWSLETTER_METADATA_RETRY_TTL_MS). */
+  get newsletterMetadataRetryTtlMs() {
+    return readNumber(process.env.WA_NEWSLETTER_METADATA_RETRY_TTL_MS, 30_000)
+  },
+  /** Base em ms para backoff de retry de mídia de newsletter (WA_NEWSLETTER_MEDIA_RETRY_BASE_MS). */
+  get newsletterMediaRetryBaseMs() {
+    return readNumber(process.env.WA_NEWSLETTER_MEDIA_RETRY_BASE_MS, 10_000)
+  },
+  /** Máximo de tentativas de retry de mídia de newsletter (WA_NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS). */
+  get newsletterMediaRetryMaxAttempts() {
+    return readNumber(process.env.WA_NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS, 5)
+  },
+  /** Máximo de falhas consecutivas no worker de backfill antes de encerrar (WA_BACKFILL_MAX_FAILURES). */
+  get backfillMaxFailures() {
+    return readNumber(process.env.WA_BACKFILL_MAX_FAILURES, 5)
+  },
+  /** Espera em ms entre ciclos de backfill com falha (WA_BACKFILL_FAILURE_BACKOFF_MS). */
+  get backfillFailureBackoffMs() {
+    return readNumber(process.env.WA_BACKFILL_FAILURE_BACKOFF_MS, 60_000)
   },
 }
