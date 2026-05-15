@@ -127,10 +127,17 @@ type ShutdownTarget = {
 
 /** Coleção de instâncias ativas para gerenciamento de encerramento */
 const shutdownTargets = new Set<ShutdownTarget>()
+/** Callbacks extras a executar no shutdown (ex: parar servidores HTTP) */
+const shutdownHooks: Array<() => Promise<void>> = []
 /** Flag para garantir que o listener de sinal do processo seja registrado uma única vez */
 let shutdownRegistered = false
 /** Flag de controle para evitar múltiplas execuções do fluxo de shutdown */
 let shutdownInProgress = false
+
+/** Registra um callback para execução durante o shutdown gracioso. */
+export function registerShutdownHook(fn: () => Promise<void>): void {
+  shutdownHooks.push(fn)
+}
 
 /**
  * Registra os listeners de sinais do SO (SIGINT, SIGTERM) para encerramento limpo.
@@ -187,6 +194,7 @@ const registerGracefulShutdown = () => {
       )
       await closeRedisClient()
       await closeMysqlPool()
+      await Promise.allSettled(shutdownHooks.map((fn) => fn()))
     } catch (error) {
       if (baseLogger) {
         baseLogger.error('falha durante shutdown gracioso', { err: error })
