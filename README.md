@@ -145,6 +145,13 @@ O projeto inclui scripts utilitários para operações avançadas:
 
 ---
 
+## 📘 Código de Conduta
+
+Este projeto segue um código de conduta para colaboração e uso responsável da plataforma:
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+---
+
 ## 📄 Licença
 
 Este projeto está licenciado sob a **Licença MIT**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
