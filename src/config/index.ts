@@ -250,6 +250,10 @@ export const config = {
   get backfillFailureBackoffMs() {
     return readNumber(process.env.WA_BACKFILL_FAILURE_BACKOFF_MS, 60_000)
   },
+  /** Timeout in ms for a single command execution, 0 = disabled (WA_COMMAND_TIMEOUT_MS). */
+  get commandTimeoutMs() {
+    return readNumber(process.env.WA_COMMAND_TIMEOUT_MS, 60_000)
+  },
   /** Base delay in ms for reconnect exponential backoff (WA_RECONNECT_BASE_DELAY_MS). */
   get reconnectBaseDelayMs() {
     return readNumber(process.env.WA_RECONNECT_BASE_DELAY_MS, 2_500)
