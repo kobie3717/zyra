@@ -39,8 +39,11 @@ USER zyra
 
 VOLUME ["/app/data"]
 
-# Prometheus antiban metrics
-EXPOSE 9108
+# Prometheus antiban metrics + health check
+EXPOSE 9108 9109
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:' + (process.env.WA_HEALTH_PORT || 9109) + '/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 ENV NODE_ENV=production \
     WA_AUTH_DIR=data/auth \

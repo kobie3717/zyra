@@ -250,4 +250,16 @@ export const config = {
   get backfillFailureBackoffMs() {
     return readNumber(process.env.WA_BACKFILL_FAILURE_BACKOFF_MS, 60_000)
   },
+  /** Habilita endpoint HTTP /health para probes de liveness (WA_HEALTH_ENABLED). */
+  get healthEnabled() {
+    return readBoolean(process.env.WA_HEALTH_ENABLED, true)
+  },
+  /** Porta do servidor de health check (WA_HEALTH_PORT). */
+  get healthPort() {
+    return readNumber(process.env.WA_HEALTH_PORT, 9109)
+  },
+  /** Host de bind do servidor de health check (WA_HEALTH_HOST). */
+  get healthHost() {
+    return process.env.WA_HEALTH_HOST ?? '0.0.0.0'
+  },
 }
