@@ -43,13 +43,33 @@ npm run db:verify
 - rodar `npm run db:backfill`
 - validar `message_media` após ciclo
 
-### 5. Sessão desconectando / não estabiliza
+### 5. Nulos altos em `users.display_name` / `chats.display_name`
+
+Sintoma:
+
+- `users.display_name` e `chats.display_name` acima do esperado no relatório de nulos.
+
+Ações:
+
+```bash
+npm run db:backfill
+npm run db:nulls
+```
+
+Verifique se os passos críticos reduziram:
+
+- `users.display_name(contacts|chats|aliases)`
+- `chats.display_name(groups|contacts|users|newsletters)`
+
+Se os nulos voltarem a subir após ingestão online, valide se a versão em produção já contém a correção de `setChat` que preserva `display_name` quando update chega nulo.
+
+### 6. Sessão desconectando / não estabiliza
 
 - revisar credenciais e autenticação
 - validar Redis/MySQL conectividade
 - verificar políticas anti-ban agressivas
 
-### 6. Comando não responde
+### 7. Comando não responde
 
 - conferir prefixo (`WA_COMMAND_PREFIX`)
 - validar evento `messages.upsert` tipo `notify`
@@ -70,4 +90,4 @@ npm run db:verify
 
 ---
 
-**Zyra Wiki** • Última atualização: 11/05/2026
+**Zyra Wiki** • Última atualização: 15/05/2026

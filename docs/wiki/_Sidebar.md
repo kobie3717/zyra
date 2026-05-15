@@ -7,6 +7,7 @@
 - [Instalação](Instalação)
 - [Configuração](Configuração)
 - [Comandos](Comandos)
+- [Código de Conduta](Código-de-Conduta)
 
 ## Arquitetura e Dados
 

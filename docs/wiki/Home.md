@@ -1,6 +1,6 @@
 # Zyra Wiki
 
-[Home](Home) | [Instalação](Instalação) | [Configuração](Configuração) | [Comandos](Comandos) | [Banco-de-Dados](Banco-de-Dados) | [Produção](Produção) | [Troubleshooting](Troubleshooting)
+[Home](Home) | [Instalação](Instalação) | [Configuração](Configuração) | [Comandos](Comandos) | [Código de Conduta](Código-de-Conduta) | [Banco-de-Dados](Banco-de-Dados) | [Produção](Produção) | [Troubleshooting](Troubleshooting)
 
 Bem-vindo à Wiki do **Zyra**.
 
@@ -16,6 +16,7 @@ Ele usa Baileys como base de conexão e oferece uma arquitetura pronta para cres
 - [Requisitos](#requisitos)
 - [Quickstart](#quickstart)
 - [Mapa de documentação](#mapa-de-documentacao)
+- [Uso responsável](#uso-responsavel)
 
 ## O que é o projeto
 
@@ -91,9 +92,18 @@ Objetivo da trilha: diagnóstico rápido de incidentes, reconciliação de dados
 - Runtime: [Comandos](Comandos), [Eventos](Eventos)
 - Dados: [Banco-de-Dados](Banco-de-Dados), [Persistência](Persistência)
 - Operação: [Produção](Produção), [Backfill](Backfill), [Troubleshooting](Troubleshooting)
+- Governança: [Código de Conduta](Código-de-Conduta)
+
+## Uso responsável
+
+O projeto deve ser usado de forma legítima e em conformidade com regras da plataforma e legislação aplicável.
+Consulte:
+
+- [Código de Conduta](Código-de-Conduta)
+- [CODE_OF_CONDUCT.md](../../CODE_OF_CONDUCT.md)
 
 ---
 
-**Zyra Wiki** • Última atualização: 11/05/2026
+**Zyra Wiki** • Última atualização: 15/05/2026
 
-[Home](Home) | [Instalação](Instalação) | [Configuração](Configuração) | [Comandos](Comandos) | [Banco-de-Dados](Banco-de-Dados) | [Produção](Produção) | [Troubleshooting](Troubleshooting)
+[Home](Home) | [Instalação](Instalação) | [Configuração](Configuração) | [Comandos](Comandos) | [Código de Conduta](Código-de-Conduta) | [Banco-de-Dados](Banco-de-Dados) | [Produção](Produção) | [Troubleshooting](Troubleshooting)
