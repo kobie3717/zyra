@@ -36,7 +36,7 @@
     "baileys-antiban": "^1.0.0",
     "dotenv": "^16.4.5",
     "fflate": "^0.8.2",
-    "libsignal": "2.0.1",
+    "libsignal": "^6.0.0",
     "link-preview-js": "4.0.1",
     "linkifyjs": "^4.3.3",
     "mysql2": "^3.20.0",
