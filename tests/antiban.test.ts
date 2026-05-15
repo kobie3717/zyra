@@ -143,7 +143,7 @@ describe('antiban helper', () => {
 
     expect(loaded).toBeUndefined()
     expect(logger.warn).toHaveBeenCalledWith(
-      'falha ao carregar estado de warm-up do antiban',
+      'failed to load antiban warm-up state',
       expect.objectContaining({ connectionId: 'conn-a', err: expect.any(Error) })
     )
   })
@@ -171,7 +171,7 @@ describe('antiban helper', () => {
     )
 
     expect(logger.warn).toHaveBeenCalledWith(
-      'falha ao salvar estado de warm-up do antiban',
+      'failed to save antiban warm-up state',
       expect.objectContaining({ connectionId: 'conn-a', reason: 'teste-save', err: expect.any(Error) })
     )
   })
@@ -216,19 +216,19 @@ describe('antiban helper', () => {
     expect(deafSession.minUptimeMs).toBe(120000)
     expect(deafSession.autoReconnect).toBe(true)
     expect(logger.warn).toHaveBeenCalledWith(
-      'antiban alterou o nivel de risco',
+      'antiban changed risk level',
       expect.objectContaining({ connectionId: 'conn-z', risk: 'high', score: 90 })
     )
     expect(logger.warn).toHaveBeenCalledWith(
-      'antiban detectou reachout timelock',
+      'antiban detected reachout timelock',
       expect.objectContaining({ connectionId: 'conn-z', enforcementType: 'temporary', errorCount: 2 })
     )
     expect(logger.info).toHaveBeenCalledWith(
-      'antiban liberou o reachout timelock',
+      'antiban lifted reachout timelock',
       expect.objectContaining({ connectionId: 'conn-z', enforcementType: 'temporary', errorCount: 0 })
     )
     expect(logger.warn).toHaveBeenCalledWith(
-      'antiban detectou sessao possivelmente surda',
+      'antiban detected possibly deaf session',
       expect.objectContaining({ connectionId: 'conn-z', silenceMs: 1000, timeoutMs: 300000, uptimeMs: 9999, autoReconnect: true })
     )
   })

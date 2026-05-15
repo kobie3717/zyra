@@ -48,7 +48,7 @@ export function createLogger(): AppLogger {
         handleRejections: true,
       }),
       new winston.transports.DailyRotateFile({
-        filename: path.join(logDir, 'aplicacao-%DATE%.log'),
+        filename: path.join(logDir, 'application-%DATE%.log'),
         level: config.logLevel,
         format: fileFormat,
         datePattern: 'YYYY-MM-DD',
@@ -57,7 +57,7 @@ export function createLogger(): AppLogger {
         maxFiles: '14d',
       }),
       new winston.transports.DailyRotateFile({
-        filename: path.join(logDir, 'erro-%DATE%.log'),
+        filename: path.join(logDir, 'error-%DATE%.log'),
         level: 'error',
         format: fileFormat,
         datePattern: 'YYYY-MM-DD',
@@ -66,7 +66,7 @@ export function createLogger(): AppLogger {
         maxFiles: '30d',
       }),
       new winston.transports.DailyRotateFile({
-        filename: path.join(logDir, 'aviso-%DATE%.log'),
+        filename: path.join(logDir, 'warning-%DATE%.log'),
         level: 'warn',
         format: fileFormat,
         datePattern: 'YYYY-MM-DD',

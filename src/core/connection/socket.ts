@@ -13,50 +13,50 @@ import { loadAntiBanWarmUpState, saveAntiBanWarmUpState, wrapSocketWithAntiBan }
 import { createHistorySyncPolicy } from './history-sync.js'
 
 /**
- * Extensão de tipo para acessar repositórios internos de LID (Linked Identity) do Baileys.
+ * Type extension to access Baileys internal LID (Linked Identity) repositories.
  * @internal
  */
 type SocketWithSignalRepository = {
-  /** Repositório de sinais contendo mapeamento de LIDs. */
+  /** Signal repository containing LID mappings. */
   signalRepository?: SignalRepositoryWithLIDStore
 }
 
 /**
- * Extensão do socket para incluir métodos de persistência imediata e Anti-Ban.
+ * Socket extension to include immediate persistence methods and Anti-Ban.
  */
 type SocketWithCredsFlush = ReturnType<typeof makeWASocket> & {
-  /** Força a persistência imediata das credenciais no disco/DB. */
+  /** Forces immediate persistence of credentials to disk/DB. */
   flushCredsNow?: (reason: string) => Promise<void>
-  /** Ações do Anti-Ban acopladas ao socket. */
+  /** Anti-Ban actions coupled to the socket. */
   antiban?: {
-    /** Exporta o estado atual de aquecimento. */
+    /** Exports current warm-up state. */
     exportWarmUpState: () => WarmUpState
-    /** Obtém estatísticas de funcionamento do Anti-Ban. */
+    /** Gets Anti-Ban operation statistics. */
     getStats: () => unknown
   }
 }
 
-/** Tipo que representa o formato da versão do protocolo do WhatsApp (ex: [2, 3000, 101]) */
+/** Type representing WhatsApp protocol version format (e.g. [2, 3000, 101]) */
 type SocketVersion = typeof DEFAULT_CONNECTION_CONFIG.version
 
 const VERSION_CACHE_TTL_MS = config.versionCacheTtlMs
-/** Timeout máximo para shutdown gracioso antes de forçar saída em milissegundos */
+/** Maximum timeout for graceful shutdown before forcing exit in milliseconds */
 const SHUTDOWN_TIMEOUT_MS = Math.max(0, Number(process.env.WA_SHUTDOWN_TIMEOUT_MS ?? 10_000))
-/** Debounce para evitar tempestade de gravações em creds.update em milissegundos */
+/** Debounce to avoid storm of writes on creds.update in milliseconds */
 const CREDS_DEBOUNCE_MS = Math.max(0, Number(process.env.WA_CREDS_DEBOUNCE_MS ?? 1_500))
-/** Código de erro associado a reach-out timelock/restrição de conta em envios/chamadas */
+/** Error code associated with reach-out timelock/account restriction on sends/calls */
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
 
-/** Cache volátil da versão do WhatsApp Web */
+/** Volatile WhatsApp Web version cache */
 let cachedVersion: { version: SocketVersion; fetchedAt: number } | null = null
 
 /**
- * Resolve a versão ideal do WhatsApp Web para a conexão.
+ * Resolves the ideal WhatsApp Web version for the connection.
  * @remarks
- * Implementa cache em memória para evitar gargalos no boot de múltiplas instâncias.
- * Se a busca falhar, utiliza a última versão em cache ou a constante padrão da biblioteca.
- * @param logger Instância do logger para registro de alertas de versão.
- * @returns Promessa com a versão [major, minor, patch].
+ * Implements in-memory cache to avoid bottlenecks on boot of multiple instances.
+ * If fetch fails, uses last cached version or the library's default constant.
+ * @param logger Logger instance for version alert registration.
+ * @returns Promise with version [major, minor, patch].
  */
 async function resolveBaileysVersion(logger: AppLogger): Promise<SocketVersion> {
   const cached = cachedVersion
@@ -66,12 +66,12 @@ async function resolveBaileysVersion(logger: AppLogger): Promise<SocketVersion> 
   try {
     const latest = await fetchLatestBaileysVersion()
     if ('error' in latest && latest.error) {
-      logger.warn('falha ao buscar a última versão do Baileys, usando fallback', { err: latest.error })
+      logger.warn('failed to fetch latest Baileys version, using fallback', { err: latest.error })
       return cached?.version ?? DEFAULT_CONNECTION_CONFIG.version
     }
 
     if (!latest.isLatest) {
-      logger.warn('versão do Baileys desatualizada detectada', {
+      logger.warn('outdated Baileys version detected', {
         version: latest.version,
       })
     }
@@ -79,25 +79,25 @@ async function resolveBaileysVersion(logger: AppLogger): Promise<SocketVersion> 
     cachedVersion = { version: latest.version, fetchedAt: Date.now() }
     return latest.version
   } catch (error) {
-    logger.warn('erro ao buscar versão, usando padrão', { err: error })
+    logger.warn('error fetching version, using default', { err: error })
     return cached?.version ?? DEFAULT_CONNECTION_CONFIG.version
   }
 }
 
 /**
- * Inicializa o estado de autenticação com base nas configurações de infraestrutura.
+ * Initializes authentication state based on infrastructure configuration.
  * @remarks
- * Tenta utilizar a estratégia centralizada (MySQL/Redis).
- * Em caso de erro crítico, regride para o sistema de arquivos local para garantir a disponibilidade.
- * @param connectionId ID único da conexão.
- * @param logger Logger para rastro de falhas de autenticação.
- * @returns O estado de autenticação e a função para salvar credenciais.
+ * Attempts to use centralized strategy (MySQL/Redis).
+ * On critical error, falls back to local filesystem to ensure availability.
+ * @param connectionId Unique connection ID.
+ * @param logger Logger for authentication failure tracking.
+ * @returns Authentication state and function to save credentials.
  */
 async function resolveAuthState(connectionId: string, logger: AppLogger) {
   try {
     return await getAuthState(connectionId)
   } catch (error) {
-    logger.error('falha ao resolver auth state, ativando fallback local', {
+    logger.error('failed to resolve auth state, activating local fallback', {
       err: error,
     })
     const { state, saveCreds } = await useMultiFileAuthState(resolveAuthDir(connectionId))
@@ -106,44 +106,44 @@ async function resolveAuthState(connectionId: string, logger: AppLogger) {
 }
 
 /**
- * Define o contrato para objetos registrados para encerramento gracioso (graceful shutdown).
+ * Defines the contract for objects registered for graceful shutdown.
  */
 type ShutdownTarget = {
-  /** Instância ativa do socket Baileys. */
+  /** Active Baileys socket instance. */
   sock: SocketWithCredsFlush
-  /** Repositório de dados vinculado à conexão. */
+  /** Data repository linked to the connection. */
   store: ReturnType<typeof createBaileysStore>
-  /** Função de persistência de credenciais. */
+  /** Credentials persistence function. */
   saveCreds: () => Promise<void>
-  /** Persistência do estado do Anti-Ban. */
+  /** Anti-Ban state persistence. */
   saveAntiBanState?: (reason: string) => Promise<void>
-  /** Função de limpeza de timers e recursos. */
+  /** Timer and resource cleanup function. */
   cleanup?: () => void
-  /** Logger da aplicação. */
+  /** Application logger. */
   logger: AppLogger
-  /** ID da conexão. */
+  /** Connection ID. */
   connectionId: string
 }
 
-/** Coleção de instâncias ativas para gerenciamento de encerramento */
+/** Collection of active instances for shutdown management */
 const shutdownTargets = new Set<ShutdownTarget>()
-/** Callbacks extras a executar no shutdown (ex: parar servidores HTTP) */
+/** Extra callbacks to execute on shutdown (e.g. stop HTTP servers) */
 const shutdownHooks: Array<() => Promise<void>> = []
-/** Flag para garantir que o listener de sinal do processo seja registrado uma única vez */
+/** Flag to ensure process signal listener is registered only once */
 let shutdownRegistered = false
-/** Flag de controle para evitar múltiplas execuções do fluxo de shutdown */
+/** Control flag to prevent multiple executions of shutdown flow */
 let shutdownInProgress = false
 
-/** Registra um callback para execução durante o shutdown gracioso. */
+/** Registers a callback for execution during graceful shutdown. */
 export function registerShutdownHook(fn: () => Promise<void>): void {
   shutdownHooks.push(fn)
 }
 
 /**
- * Registra os listeners de sinais do SO (SIGINT, SIGTERM) para encerramento limpo.
+ * Registers OS signal listeners (SIGINT, SIGTERM) for clean shutdown.
  * @remarks
- * Quando um sinal é recebido, a função percorre todos os sockets ativos,
- * persiste as credenciais pendentes e limpa as referências antes de fechar o processo.
+ * When a signal is received, the function iterates through all active sockets,
+ * persists pending credentials and clears references before closing the process.
  * @internal
  */
 const registerGracefulShutdown = () => {
@@ -161,9 +161,9 @@ const registerGracefulShutdown = () => {
       SHUTDOWN_TIMEOUT_MS > 0
         ? setTimeout(() => {
             if (baseLogger) {
-              baseLogger.error('shutdown demorou demais, forçando encerramento', { signal })
+              baseLogger.error('shutdown took too long, forcing exit', { signal })
             } else {
-              console.error('shutdown demorou demais, forçando encerramento', {
+              console.error('shutdown took too long, forcing exit', {
                 signal,
               })
             }
@@ -174,7 +174,7 @@ const registerGracefulShutdown = () => {
     try {
       await Promise.all(
         targets.map(async ({ sock, saveCreds, saveAntiBanState, cleanup, logger, connectionId }) => {
-          logger.warn('executando shutdown gracioso do socket', {
+          logger.warn('executing graceful socket shutdown', {
             signal,
             connectionId,
           })
@@ -185,7 +185,7 @@ const registerGracefulShutdown = () => {
           try {
             await saveCreds()
           } catch (error) {
-            logger.error('falha ao persistir credenciais durante o encerramento', { err: error })
+            logger.error('failed to persist credentials during shutdown', { err: error })
           }
           if (typeof sock.end === 'function') {
             await sock.end(undefined)
@@ -197,14 +197,14 @@ const registerGracefulShutdown = () => {
       await Promise.allSettled(shutdownHooks.map((fn) => fn()))
     } catch (error) {
       if (baseLogger) {
-        baseLogger.error('falha durante shutdown gracioso', { err: error })
+        baseLogger.error('failure during graceful shutdown', { err: error })
       } else {
-        console.error('falha durante shutdown gracioso', { err: error })
+        console.error('failure during graceful shutdown', { err: error })
       }
     } finally {
       if (forceExit) clearTimeout(forceExit)
     }
-    // Opcional: process.exit(0) se este for o único serviço
+    // Optional: process.exit(0) if this is the only service
   }
 
   process.once('SIGINT', () => void handler('SIGINT'))
@@ -212,27 +212,27 @@ const registerGracefulShutdown = () => {
 }
 
 /**
- * Fábrica (Factory) para criação e configuração completa do Socket Baileys.
+ * Factory for creation and complete configuration of Baileys Socket.
  * * @remarks
- * Esta função orquestra diversos componentes vitais:
- * 1. **Auth**: Carrega a estratégia definida (MySQL, Redis, Disco).
- * 2. **Version**: Resolve a versão do protocolo com caching.
- * 3. **Sync**: Configura políticas de sincronização de histórico para evitar consumo excessivo de memória.
- * 4. **Store**: Vincula o repositório de mensagens e metadados ao barramento de eventos.
- * 5. **Graceful Shutdown**: Registra a instância para persistência segura em caso de encerramento do processo.
+ * This function orchestrates several vital components:
+ * 1. **Auth**: Loads the defined strategy (MySQL, Redis, Disk).
+ * 2. **Version**: Resolves protocol version with caching.
+ * 3. **Sync**: Configures history sync policies to avoid excessive memory consumption.
+ * 4. **Store**: Links message and metadata repository to event bus.
+ * 5. **Graceful Shutdown**: Registers instance for safe persistence on process termination.
  * * @example
  * ```typescript
- * const sock = await createSocket('instancia-1', logger);
+ * const sock = await createSocket('instance-1', logger);
  * ```
- * * @param connectionId - Identificador único da sessão (connection_id).
- * @param logger - Instância do logger para monitoramento.
- * @returns Uma instância configurada de `WASocket`.
+ * * @param connectionId - Unique session identifier (connection_id).
+ * @param logger - Logger instance for monitoring.
+ * @returns A configured `WASocket` instance.
  */
 export async function createSocket(connectionId: string, logger: AppLogger) {
   const store = createBaileysStore(connectionId)
-  const strategy = config.mysqlUrl ? 'mysql' : config.redisUrl ? 'redis' : 'disco'
+  const strategy = config.mysqlUrl ? 'mysql' : config.redisUrl ? 'redis' : 'disk'
 
-  logger.info('inicializando setup do socket', { strategy, connectionId })
+  logger.info('initializing socket setup', { strategy, connectionId })
 
   const { state, saveCreds } = await resolveAuthState(connectionId, logger)
   const version = await resolveBaileysVersion(logger)
@@ -258,13 +258,13 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
     mediaCache: store.caches.mediaCache,
   })
 
-  // Sincronização inicial do JID do bot
+  // Initial bot JID synchronization
   store.setSelfJid(rawSock.user?.id ?? null)
 
   const warmUpState = await loadAntiBanWarmUpState(connectionId, logger)
   const sock = wrapSocketWithAntiBan(rawSock, logger, connectionId, warmUpState) as SocketWithCredsFlush
 
-  // Escuta atualizações de chaves criptográficas e tokens
+  // Listen for cryptographic keys and tokens updates
   let credsSaveTimer: NodeJS.Timeout | null = null
   let credsSaveRequested = false
   let credsSaveRunner: Promise<void> | null = null
@@ -298,7 +298,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
         try {
           await saveCreds()
         } catch (error) {
-          logger.error('erro ao salvar credenciais durante ciclo de vida', {
+          logger.error('error saving credentials during lifecycle', {
             err: error,
           })
         }
@@ -315,7 +315,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
       clearTimeout(credsSaveTimer)
       credsSaveTimer = null
     }
-    logger.info('forcando persistencia imediata de credenciais', { connectionId, reason })
+    logger.info('forcing immediate credentials persistence', { connectionId, reason })
     await flushCredsSave()
   }
 
@@ -343,7 +343,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
     if (update.connection === 'open') {
       startAntibanStateTimer()
       store.setSelfJid(sock.user?.id ?? null)
-      logger.info('status da conexao: aberta', { connectionId })
+      logger.info('connection status: open', { connectionId })
     }
 
     if (update.isNewLogin) {
@@ -355,12 +355,12 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
       clearAntibanStateTimer()
       void saveAntibanState('connection_close')
       const statusCode = (update.lastDisconnect?.error as Boom | undefined)?.output?.statusCode
-      logger.warn('status da conexao: encerrada', { connectionId, statusCode })
+      logger.warn('connection status: closed', { connectionId, statusCode })
       if (statusCode === REACHOUT_TIMELOCK_STATUS_CODE) {
-        logger.error('alerta de restricao de conta detectado (463)', {
+        logger.error('account restriction alert detected (463)', {
           connectionId,
           statusCode,
-          recommendation: 'validar timelock da conta e reduzir envios para novos contatos',
+          recommendation: 'validate account timelock and reduce sends to new contacts',
         })
       }
 
@@ -369,7 +369,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
       }
 
       if (statusCode === DisconnectReason.loggedOut) {
-        logger.error('sessao invalidada/removida, requer re-pareamento', {
+        logger.error('session invalidated/removed, requires re-pairing', {
           connectionId,
         })
         store.setSelfJid(null)
@@ -377,20 +377,20 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
     }
   })
 
-  // Vincula repositório de LIDs se disponível (WhatsApp Multi-Device v2)
+  // Bind LID repository if available (WhatsApp Multi-Device v2)
   const lidMappingStore = (rawSock as SocketWithSignalRepository).signalRepository?.lidMapping
   if (lidMappingStore) {
     store.bindLidMappingStore(lidMappingStore)
   }
 
-  // Acopla a store ao fluxo de eventos do socket
+  // Attach store to socket event flow
   store.bind(sock.ev)
 
   sock.ev.on('creds.update', scheduleCredsSave)
 
   ;(sock as SocketWithCredsFlush).flushCredsNow = flushCredsNow
 
-  // Registro para encerramento seguro do processo
+  // Registration for safe process termination
   shutdownTargets.add({
     sock,
     store,
@@ -406,7 +406,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
 }
 
 /**
- * Remove um alvo de shutdown da conexão atual caso ele ainda aponte para o mesmo socket.
+ * Removes a shutdown target from the current connection if it still points to the same socket.
  */
 export const unregisterShutdownTarget = (connectionId: string, sock?: ReturnType<typeof makeWASocket>) => {
   for (const target of shutdownTargets) {
@@ -417,6 +417,6 @@ export const unregisterShutdownTarget = (connectionId: string, sock?: ReturnType
 }
 
 /**
- * Indica se o processo está em ciclo de encerramento gracioso.
+ * Indicates whether the process is in graceful shutdown cycle.
  */
 export const isShutdownInProgress = () => shutdownInProgress

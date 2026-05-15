@@ -2,8 +2,8 @@ import path from 'node:path'
 import { config } from '../../config/index.js'
 
 /**
- * Resolve o diretório de auth isolando por connectionId.
- * Importante quando um único processo mantém múltiplas conexões.
+ * Resolves auth directory isolating by connectionId.
+ * Important when a single process maintains multiple connections.
  */
 export const resolveAuthDir = (connectionId?: string): string => {
   const resolvedConnectionId = connectionId ?? config.connectionId ?? 'default'

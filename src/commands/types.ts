@@ -1,16 +1,16 @@
 import type { CommandContext } from '../core/command-runtime/context.js'
 
 /**
- * Interface que define a estrutura de um comando do sistema.
+ * Interface defining system command structure.
  */
 export type Command = {
-  /** Nome único do comando (usado para invocação). */
+  /** Unique command name (used for invocation). */
   name: string
-  /** Descrição breve da funcionalidade do comando. */
+  /** Brief description of command functionality. */
   description: string
   /**
-   * Lógica de execução do comando.
-   * @param ctx Contexto do comando contendo dados da mensagem e métodos utilitários.
+   * Command execution logic.
+   * @param ctx Command context containing message data and utility methods.
    */
   execute: (ctx: CommandContext) => Promise<void>
 }

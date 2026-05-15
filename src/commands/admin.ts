@@ -284,7 +284,7 @@ export const demoteCommand: Command = {
 
 /** Comando que abre/fecha o grupo para mensagens de membros. */
 export const groupCommand: Command = {
-  name: 'grupo',
+  name: 'group',
   description: 'Abre ou fecha o grupo para envio de mensagens',
   async execute(ctx) {
     const allowed = await ensureAdminContext(ctx)

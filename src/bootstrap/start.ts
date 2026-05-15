@@ -49,7 +49,7 @@ const replaceSocket = async (reason: string) => {
 
   if (previousSocket) {
     unregisterShutdownTarget(connectionId, previousSocket)
-    logger.warn('encerrando socket anterior para iniciar nova geração', {
+    logger.warn('closing previous socket to start new generation', {
       connectionId,
       generation,
       reason,
@@ -57,7 +57,7 @@ const replaceSocket = async (reason: string) => {
     try {
       ;(previousSocket.ev as { removeAllListeners?: (...args: unknown[]) => unknown }).removeAllListeners?.()
     } catch (error) {
-      logger.debug('falha ao remover listeners do socket anterior', {
+      logger.debug('failed to remove listeners from previous socket', {
         err: error,
         connectionId,
         generation,
@@ -66,7 +66,7 @@ const replaceSocket = async (reason: string) => {
     try {
       await previousSocket.end(new Error(`socket replaced: ${reason}`))
     } catch (error) {
-      logger.debug('falha ao encerrar socket anterior (seguindo com nova conexão)', {
+      logger.debug('failed to close previous socket (proceeding with new connection)', {
         err: error,
         connectionId,
         generation,
@@ -79,7 +79,7 @@ const replaceSocket = async (reason: string) => {
 
   const reconnectFromThisSocket = async () => {
     if (generation !== socketGeneration) {
-      logger.debug('ignorando pedido de reconexão de socket antigo', {
+      logger.debug('ignoring reconnect request from old socket', {
         connectionId,
         generation,
         currentGeneration: socketGeneration,
@@ -90,17 +90,17 @@ const replaceSocket = async (reason: string) => {
   }
 
   registerEvents({ sock, logger, reconnect: reconnectFromThisSocket, connectionId })
-  logger.info('Bot sendo iniciado com sucesso.', { connectionId, generation, reason })
+  logger.info('Bot started successfully.', { connectionId, generation, reason })
 }
 
 const scheduleReconnect = async (reason: string) => {
   const logger = getLogger()
   if (isShutdownInProgress()) {
-    logger.warn('reconexao ignorada: shutdown em andamento', { reason })
+    logger.warn('reconnect ignored: shutdown in progress', { reason })
     return
   }
   if (reconnectPromise) {
-    logger.warn('reconexão já em andamento, ignorando solicitação paralela', { reason })
+    logger.warn('reconnect already in progress, ignoring parallel request', { reason })
     return reconnectPromise
   }
 
@@ -108,7 +108,7 @@ const scheduleReconnect = async (reason: string) => {
     const elapsedSinceLastReconnect = Date.now() - lastReconnectAt
     const waitMs = Math.max(0, RECONNECT_MIN_DELAY_MS - elapsedSinceLastReconnect)
     if (waitMs > 0) {
-      logger.info('aguardando janela mínima antes de reconectar', { waitMs, reason })
+      logger.info('waiting minimum window before reconnecting', { waitMs, reason })
       await wait(waitMs)
     }
     await replaceSocket(reason)
@@ -121,7 +121,7 @@ const scheduleReconnect = async (reason: string) => {
 }
 
 /**
- * Inicializa o MySQL (se configurado), cria o socket e registra eventos.
+ * Initializes MySQL (if configured), creates socket and registers events.
  */
 export async function start(): Promise<void> {
   const logger = getLogger()

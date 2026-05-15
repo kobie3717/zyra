@@ -65,7 +65,7 @@ export const startAntiBanMetricsServer = ({ logger, getStats }: StartAntiBanMetr
       res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8')
       res.end(body)
     } catch (error) {
-      logger.error('falha ao renderizar metricas do antiban', { err: error })
+      logger.error('failed to render antiban metrics', { err: error })
       res.statusCode = 500
       res.setHeader('content-type', 'text/plain; charset=utf-8')
       res.end('internal server error')
@@ -73,7 +73,7 @@ export const startAntiBanMetricsServer = ({ logger, getStats }: StartAntiBanMetr
   })
 
   server.listen(config.antibanMetricsPort, config.antibanMetricsHost, () => {
-    logger.info('endpoint de metricas do antiban iniciado', {
+    logger.info('antiban metrics endpoint started', {
       host: config.antibanMetricsHost,
       port: config.antibanMetricsPort,
       path: config.antibanMetricsPath,

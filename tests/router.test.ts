@@ -145,7 +145,7 @@ describe('router', () => {
 
     expect(processMessage).toHaveBeenNthCalledWith(1, sock, messages[0])
     expect(processMessage).toHaveBeenNthCalledWith(2, sock, messages[1])
-    expect(logger.error).toHaveBeenCalledWith('falha ao processar mensagem enfileirada', {
+    expect(logger.error).toHaveBeenCalledWith('failed to process queued message', {
       err: expect.any(Error),
       queueKey: 'conn:chat@s.whatsapp.net',
     })
@@ -192,7 +192,7 @@ describe('router', () => {
     const { handleIncomingMessages } = await import('../src/router/index.ts')
     await handleIncomingMessages({} as never, [], logger, 'conn', sqlStore as never)
 
-    expect(logger.info).toHaveBeenCalledWith('messages.upsert sem mensagens')
+    expect(logger.info).toHaveBeenCalledWith('messages.upsert without messages')
   })
 
   it('isola filas por connectionId quando dois sockets recebem mensagens no mesmo chat', async () => {
@@ -257,12 +257,12 @@ describe('router', () => {
     await vi.waitFor(() => {
       expect(processMessage).toHaveBeenCalledTimes(1)
     })
-    expect(logger.warn).toHaveBeenCalledWith('fila de processamento saturada; mensagem descartada para proteger memoria', {
+    expect(logger.warn).toHaveBeenCalledWith('processing queue saturated; message dropped to protect memory', {
       queueKey: 'conn:chat@s.whatsapp.net',
       pending: 1,
       maxPending: 1,
     })
-    expect(logger.debug).toHaveBeenCalledWith('mensagem descartada por backpressure da fila', {
+    expect(logger.debug).toHaveBeenCalledWith('message dropped due to queue backpressure', {
       queueKey: 'conn:chat@s.whatsapp.net',
       messageId: '2',
     })

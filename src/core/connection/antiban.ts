@@ -4,14 +4,14 @@ import { config } from '../../config/index.js'
 import type { AppLogger } from '../../observability/logger.js'
 
 /**
- * Extensão do socket para incluir métodos do Anti-Ban.
+ * Socket extension to include Anti-Ban methods.
  */
 type SocketWithAntiBan = {
-  /** Propriedades injetadas pelo wrapper do Anti-Ban. */
+  /** Properties injected by Anti-Ban wrapper. */
   antiban?: {
-    /** Exporta o estado atual de aquecimento (warm-up). */
+    /** Exports current warm-up state. */
     exportWarmUpState: () => WarmUpState
-    /** Obtém estatísticas internas de uso. */
+    /** Gets internal usage statistics. */
     getStats: () => unknown
   }
 }
@@ -39,10 +39,10 @@ const resolveStateAdapter = (connectionId: string): FileStateAdapter =>
   new FileStateAdapter(path.resolve(process.cwd(), config.antibanStateDir, connectionId))
 
 /**
- * Cria a configuração do Anti-Ban baseada nas configurações globais da aplicação.
- * @param logger Logger da aplicação para reportar riscos e bloqueios.
- * @param connectionId Identificador único da conexão (ex: 'main').
- * @returns Objeto de configuração compatível com a biblioteca baileys-antiban.
+ * Creates Anti-Ban configuration based on application global settings.
+ * @param logger Application logger to report risks and blocks.
+ * @param connectionId Unique connection identifier (e.g. 'main').
+ * @returns Configuration object compatible with baileys-antiban library.
  */
 export function createAntiBanConfig(logger: AppLogger, connectionId: string): AntiBanConfig {
   const lidResolver = {
@@ -64,7 +64,7 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
     health: {
       autoPauseAt: config.antibanAutoPauseAt,
       onRiskChange: (status) => {
-        logger.warn('antiban alterou o nivel de risco', {
+        logger.warn('antiban changed risk level', {
           connectionId,
           risk: status.risk,
           score: status.score,
@@ -75,7 +75,7 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
     },
     timelock: {
       onTimelockDetected: (state) => {
-        logger.warn('antiban detectou reachout timelock', {
+        logger.warn('antiban detected reachout timelock', {
           connectionId,
           enforcementType: state.enforcementType ?? null,
           expiresAt: state.expiresAt?.toISOString() ?? null,
@@ -83,7 +83,7 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
         })
       },
       onTimelockLifted: (state) => {
-        logger.info('antiban liberou o reachout timelock', {
+        logger.info('antiban lifted reachout timelock', {
           connectionId,
           enforcementType: state.enforcementType ?? null,
           errorCount: state.errorCount,
@@ -92,15 +92,15 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
     },
   }
 
-  // Compatibilidade: algumas versões do pacote ainda não expõem `deafSession` na tipagem,
-  // embora o runtime aceite a opção.
+  // Compatibility: some package versions don't expose `deafSession` in typing yet,
+  // although runtime accepts the option.
   if (config.antibanDeafSessionEnabled) {
     ;(antiBanConfig as Record<string, unknown>).deafSession = {
       timeoutMs: config.antibanDeafSessionTimeoutMs,
       minUptimeMs: config.antibanDeafSessionMinUptimeMs,
       autoReconnect: config.antibanDeafSessionAutoReconnect,
       onDeafSession: (state: { silenceMs?: number; timeoutMs?: number; uptimeMs?: number; autoReconnect?: boolean }) => {
-        logger.warn('antiban detectou sessao possivelmente surda', {
+        logger.warn('antiban detected possibly deaf session', {
           connectionId,
           silenceMs: state.silenceMs ?? null,
           timeoutMs: state.timeoutMs ?? null,
@@ -115,10 +115,10 @@ export function createAntiBanConfig(logger: AppLogger, connectionId: string): An
 }
 
 /**
- * Carrega o estado de aquecimento (warm-up) do Anti-Ban do armazenamento persistente.
- * @param connectionId Identificador da conexão.
- * @param logger Logger para reportar erros de carregamento.
- * @returns O estado de warm-up ou undefined se não existir ou se o Anti-Ban estiver desativado.
+ * Loads Anti-Ban warm-up state from persistent storage.
+ * @param connectionId Connection identifier.
+ * @param logger Logger to report loading errors.
+ * @returns Warm-up state or undefined if it doesn't exist or if Anti-Ban is disabled.
  */
 export async function loadAntiBanWarmUpState(connectionId: string, logger: AppLogger): Promise<WarmUpState | undefined> {
   if (!config.antibanEnabled) return undefined
@@ -126,7 +126,7 @@ export async function loadAntiBanWarmUpState(connectionId: string, logger: AppLo
     const state = await resolveStateAdapter(connectionId).load('warmup')
     return state ?? undefined
   } catch (error) {
-    logger.warn('falha ao carregar estado de warm-up do antiban', {
+    logger.warn('failed to load antiban warm-up state', {
       connectionId,
       err: error,
     })
@@ -135,19 +135,19 @@ export async function loadAntiBanWarmUpState(connectionId: string, logger: AppLo
 }
 
 /**
- * Salva o estado atual de aquecimento (warm-up) do Anti-Ban no armazenamento persistente.
- * @param sock Socket envolvido pelo Anti-Ban.
- * @param connectionId Identificador da conexão.
- * @param logger Logger para reportar o status da operação.
- * @param reason Motivo pelo qual o estado está sendo salvo (ex: 'periodico', 'desconexao').
+ * Saves current Anti-Ban warm-up state to persistent storage.
+ * @param sock Socket wrapped by Anti-Ban.
+ * @param connectionId Connection identifier.
+ * @param logger Logger to report operation status.
+ * @param reason Reason why state is being saved (e.g. 'periodic', 'disconnect').
  */
 export async function saveAntiBanWarmUpState(sock: SocketWithAntiBan, connectionId: string, logger: AppLogger, reason: string): Promise<void> {
   if (!config.antibanEnabled || !sock.antiban) return
   try {
     await resolveStateAdapter(connectionId).save('warmup', sock.antiban.exportWarmUpState())
-    logger.debug('estado de warm-up do antiban salvo', { connectionId, reason })
+    logger.debug('antiban warm-up state saved', { connectionId, reason })
   } catch (error) {
-    logger.warn('falha ao salvar estado de warm-up do antiban', {
+    logger.warn('failed to save antiban warm-up state', {
       connectionId,
       reason,
       err: error,
@@ -156,12 +156,12 @@ export async function saveAntiBanWarmUpState(sock: SocketWithAntiBan, connection
 }
 
 /**
- * Envolve um socket do Baileys com a camada de proteção Anti-Ban.
- * @param sock Instância do socket original.
- * @param logger Logger da aplicação.
- * @param connectionId Identificador da conexão.
- * @param warmUpState Estado de aquecimento inicial opcional.
- * @returns O socket protegido ou o original se o Anti-Ban estiver desativado.
+ * Wraps a Baileys socket with Anti-Ban protection layer.
+ * @param sock Original socket instance.
+ * @param logger Application logger.
+ * @param connectionId Connection identifier.
+ * @param warmUpState Optional initial warm-up state.
+ * @returns Protected socket or original if Anti-Ban is disabled.
  */
 export function wrapSocketWithAntiBan<T extends Record<string, unknown>>(
   sock: T,
@@ -171,6 +171,6 @@ export function wrapSocketWithAntiBan<T extends Record<string, unknown>>(
 ): T & Partial<WrappedSocket> {
   if (!config.antibanEnabled) return sock as T & Partial<WrappedSocket>
   const wrapped = wrapSocket(sock as unknown as Parameters<typeof wrapSocket>[0], createAntiBanConfig(logger, connectionId), warmUpState)
-  logger.info('antiban ativado no socket', { connectionId })
+  logger.info('antiban enabled on socket', { connectionId })
   return wrapped as unknown as T & Partial<WrappedSocket>
 }

@@ -241,7 +241,7 @@ const executeStickerCommand: Command['execute'] = async (ctx) => {
         const metadata = await ctx.getMetadata()
         groupName = metadata.subject?.trim() || 'grupo sem nome'
       } catch {
-        groupName = 'grupo'
+        groupName = 'group'
       }
     }
 

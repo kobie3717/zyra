@@ -8,7 +8,7 @@ const MAX_PENDING_PER_QUEUE = Math.max(1, Number(process.env.WA_ROUTER_MAX_PENDI
 
 const resolveQueueKey = (message: proto.IWebMessageInfo, connectionId: string): string => {
   const chatKey = message.key?.remoteJid ?? message.key?.id ?? '__unknown_chat__'
-  // Um processo pode manter múltiplas conexões; isolamos a fila por conexão para evitar head-of-line blocking.
+  // A process can maintain multiple connections; we isolate queue per connection to avoid head-of-line blocking.
   return `${connectionId}:${chatKey}`
 }
 
@@ -19,7 +19,7 @@ const enqueueMessageProcessing = (
 ): boolean => {
   const pending = queueSizes.get(queueKey) ?? 0
   if (pending >= MAX_PENDING_PER_QUEUE) {
-    logger.warn('fila de processamento saturada; mensagem descartada para proteger memoria', {
+    logger.warn('processing queue saturated; message dropped to protect memory', {
       queueKey,
       pending,
       maxPending: MAX_PENDING_PER_QUEUE,
@@ -33,7 +33,7 @@ const enqueueMessageProcessing = (
     .catch(() => undefined)
     .then(task)
     .catch((error) => {
-      logger.error('falha ao processar mensagem enfileirada', {
+      logger.error('failed to process queued message', {
         err: error,
         queueKey,
       })
@@ -55,8 +55,8 @@ const enqueueMessageProcessing = (
 }
 
 /**
- * Enfileira mensagens recebidas para execucao assíncrona preservando a ordem por chat.
- * Permite injetar a store SQL para multi-tenant.
+ * Queues received messages for asynchronous execution preserving order per chat.
+ * Allows injecting SQL store for multi-tenant.
  */
 export async function handleIncomingMessages(
   sock: WASocket,
@@ -67,7 +67,7 @@ export async function handleIncomingMessages(
 ): Promise<void> {
   const processor = createCommandProcessor({ logger, sqlStore })
   if (!messages.length) {
-    logger.info('messages.upsert sem mensagens')
+    logger.info('messages.upsert without messages')
     return
   }
   for (const message of messages) {
@@ -80,7 +80,7 @@ export async function handleIncomingMessages(
       logger
     )
     if (!enqueued) {
-      logger.debug('mensagem descartada por backpressure da fila', {
+      logger.debug('message dropped due to queue backpressure', {
         queueKey,
         messageId: message.key?.id ?? null,
       })
