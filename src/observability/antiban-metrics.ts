@@ -1,5 +1,4 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { createMetricsHandler } from 'baileys-antiban'
 import { config } from '../config/index.js'
 import type { AppLogger } from './logger.js'
 
@@ -24,6 +23,30 @@ const isMetricsPath = (req: IncomingMessage): boolean => {
   return pathOnly === config.antibanMetricsPath
 }
 
+// Flatten nested stats object into Prometheus gauge lines.
+// E.g. { rateLimiter: { sent: 1 } } → zyra_antiban_rateLimiter_sent 1
+function renderPrometheus(stats: unknown, prefix = 'zyra_antiban'): string {
+  if (stats === null || stats === undefined) return ''
+  const lines: string[] = []
+  const walk = (obj: unknown, path: string) => {
+    if (obj === null || obj === undefined) return
+    if (typeof obj === 'number' && Number.isFinite(obj)) {
+      lines.push(`${path} ${obj}`)
+    } else if (typeof obj === 'boolean') {
+      lines.push(`${path} ${obj ? 1 : 0}`)
+    } else if (typeof obj === 'string') {
+      // strings become labels on a present gauge
+      lines.push(`${path}{value=${JSON.stringify(obj)}} 1`)
+    } else if (typeof obj === 'object') {
+      for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+        walk(value, `${path}_${key}`)
+      }
+    }
+  }
+  walk(stats, prefix)
+  return lines.join('\n') + '\n'
+}
+
 export const startAntiBanMetricsServer = ({ logger, getStats }: StartAntiBanMetricsServerOptions): MetricsServerHandle => {
   if (!config.antibanEnabled || !config.antibanMetricsEnabled) {
     return {
@@ -31,14 +54,16 @@ export const startAntiBanMetricsServer = ({ logger, getStats }: StartAntiBanMetr
     }
   }
 
-  const metrics = createMetricsHandler(() => getStats() as Parameters<typeof createMetricsHandler>[0] extends () => infer T ? T : never)
-  const server: Server = createServer(async (req, res) => {
+  const server: Server = createServer((req, res) => {
     if (!isMetricsPath(req)) {
       notFound(res)
       return
     }
     try {
-      await metrics.handle(req, res)
+      const body = renderPrometheus(getStats())
+      res.statusCode = 200
+      res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8')
+      res.end(body)
     } catch (error) {
       logger.error('falha ao renderizar metricas do antiban', { err: error })
       res.statusCode = 500
