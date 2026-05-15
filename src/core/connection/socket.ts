@@ -8,6 +8,7 @@ import { createBaileysStore } from '../../store/baileys-store.js'
 import { getAuthState } from '../auth/state.js'
 import { resolveAuthDir } from '../auth/auth-dir.js'
 import { closeRedisClient } from '../redis/client.js'
+import { closeMysqlPool } from '../db/mysql.js'
 import { loadAntiBanWarmUpState, saveAntiBanWarmUpState, wrapSocketWithAntiBan } from './antiban.js'
 import { createHistorySyncPolicy } from './history-sync.js'
 
@@ -38,8 +39,7 @@ type SocketWithCredsFlush = ReturnType<typeof makeWASocket> & {
 /** Tipo que representa o formato da versão do protocolo do WhatsApp (ex: [2, 3000, 101]) */
 type SocketVersion = typeof DEFAULT_CONNECTION_CONFIG.version
 
-/** Tempo de vida do cache da versão do Baileys (24 horas) */
-const VERSION_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const VERSION_CACHE_TTL_MS = Math.max(0, Number(process.env.WA_VERSION_CACHE_TTL_MS ?? 24 * 60 * 60 * 1000))
 /** Timeout máximo para shutdown gracioso antes de forçar saída em milissegundos */
 const SHUTDOWN_TIMEOUT_MS = Math.max(0, Number(process.env.WA_SHUTDOWN_TIMEOUT_MS ?? 10_000))
 /** Debounce para evitar tempestade de gravações em creds.update em milissegundos */
@@ -186,6 +186,7 @@ const registerGracefulShutdown = () => {
         })
       )
       await closeRedisClient()
+      await closeMysqlPool()
     } catch (error) {
       if (baseLogger) {
         baseLogger.error('falha durante shutdown gracioso', { err: error })
