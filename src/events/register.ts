@@ -109,7 +109,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
     void sqlStore.recordEvent({ type: String(event), data: meta, ...context })
   }
   const logEvent = (event: keyof BaileysEventMap, meta: Record<string, unknown>, context?: EventContext) => {
-    logger.debug('evento do Baileys recebido', { event, ...meta })
+    logger.debug('Baileys event received', { event, ...meta })
     recordEvent(event, meta, context)
   }
   const resolveSelfJid = () => sock.user?.id ?? null
@@ -207,7 +207,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       if (!refreshed || !refreshed.key || !hasMediaKey(refreshed)) return
       sock.ev.emit('messages.update', [{ key: refreshed.key, update: refreshed }])
       newsletterMediaRetryState.delete(retryKey)
-      logger.debug('midia newsletter atualizada via updateMediaMessage', {
+      logger.debug('newsletter media updated via updateMediaMessage', {
         chatJid,
         messageId: refreshed.key.id ?? key?.id ?? null,
         messageType: normalized.type,
@@ -222,7 +222,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       })
       const isKnownError = isKnownNewsletterMediaRefreshError(error)
       if (isKnownError) {
-        logger.debug('falha conhecida ao atualizar midia de newsletter (ignorada)', {
+        logger.debug('known failure updating newsletter media (ignored)', {
           chatJid,
           messageId: key?.id ?? null,
           messageType: normalized.type,
@@ -233,7 +233,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
       const shouldLogWarn = !prev?.lastError || prev.lastError !== messageError
       if (shouldLogWarn) {
-        logger.warn('falha ao atualizar midia de newsletter', {
+        logger.warn('failed to update newsletter media', {
           err: error,
           chatJid,
           messageId: key?.id ?? null,
@@ -289,7 +289,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
         newsletterMetadataSync.set(newsletterId, { nextAttemptAt: Date.now() + NEWSLETTER_METADATA_SYNC_TTL_MS })
       } catch (error) {
         newsletterMetadataSync.set(newsletterId, { nextAttemptAt: Date.now() + NEWSLETTER_METADATA_RETRY_TTL_MS })
-        logger.debug('falha ao sincronizar metadados de newsletter', { newsletterId, source, err: error })
+        logger.debug('failed to sync newsletter metadata', { newsletterId, source, err: error })
       }
     })()
     newsletterMetadataSync.set(newsletterId, { nextAttemptAt: now + NEWSLETTER_METADATA_SYNC_TTL_MS, inFlight })
@@ -326,52 +326,52 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
 
   const syncGroupsOnConnect = async (): Promise<GroupMetadata[]> => {
     try {
-      logger.info('sincronizando grupos da conta')
+      logger.info('syncing account groups')
       const groupMap = await sock.groupFetchAllParticipating()
       const groups = Object.values(groupMap)
       if (groups.length) {
         sock.ev.emit('groups.upsert', groups)
-        logger.info('grupos sincronizados', { count: groups.length })
+        logger.info('groups synced', { count: groups.length })
       } else {
-        logger.info('nenhum grupo encontrado para sincronizar, tentando novamente em 5s')
+        logger.info('no groups found to sync, retrying in 5s')
         await new Promise((resolve) => setTimeout(resolve, 5000))
         const retryMap = await sock.groupFetchAllParticipating()
         const retryGroups = Object.values(retryMap)
         if (retryGroups.length) {
           sock.ev.emit('groups.upsert', retryGroups)
-          logger.info('grupos sincronizados (retry)', { count: retryGroups.length })
+          logger.info('groups synced (retry)', { count: retryGroups.length })
           return retryGroups
         }
-        logger.info('nenhum grupo encontrado para sincronizar (retry)')
+        logger.info('no groups found to sync (retry)')
       }
       return groups
     } catch (error) {
-      logger.warn('falha ao sincronizar grupos', { err: error })
+      logger.warn('failed to sync groups', { err: error })
       return []
     }
   }
 
   const syncCommunitiesOnConnect = async (groupsSnapshot: GroupMetadata[]) => {
     try {
-      logger.info('sincronizando comunidades da conta')
+      logger.info('syncing account communities')
       const communityMap = await sock.communityFetchAllParticipating()
       const communities = Object.values(communityMap)
       if (communities.length) {
-        logger.info('comunidades sincronizadas', { count: communities.length })
+        logger.info('communities synced', { count: communities.length })
       } else {
         const communityGroups = groupsSnapshot.filter((group) => group.isCommunity)
         const linkedParents = new Set(groupsSnapshot.map((group) => group.linkedParent).filter((jid): jid is string => Boolean(jid)))
         if (communityGroups.length || linkedParents.size) {
-          logger.info('comunidades detectadas via grupos', {
+          logger.info('communities detected via groups', {
             communities: communityGroups.length,
             linkedParents: linkedParents.size,
           })
         } else {
-          logger.info('nenhuma comunidade encontrada para sincronizar')
+          logger.info('no communities found to sync')
         }
       }
     } catch (error) {
-      logger.warn('falha ao sincronizar comunidades', { err: error })
+      logger.warn('failed to sync communities', { err: error })
     }
   }
 
@@ -380,7 +380,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       const { connection, lastDisconnect, qr, receivedPendingNotifications, isNewLogin } = update
 
       if (qr && config.printQRInTerminal) {
-        logger.info('QR code recebido, escaneie com seu WhatsApp')
+        logger.info('QR code received, scan with your WhatsApp')
         qrcode.generate(qr, { small: true })
       }
 
@@ -409,10 +409,10 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
 
         logger.warn('connection closed', { statusCode, restartRequired })
         if (statusCode === REACHOUT_TIMELOCK_STATUS_CODE) {
-          logger.error('alerta de restricao de conta detectado (463)', {
+          logger.error('account restriction alert detected (463)', {
             statusCode,
             connectionId,
-            recommendation: 'verifique reachout timelock/tctoken e reduza alcance para novos contatos temporariamente',
+            recommendation: 'validate account timelock and reduce reach to new contacts temporarily',
           })
         }
 
@@ -422,7 +422,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
               try {
                 await socketWithCredsFlush.flushCredsNow('before_reconnect')
               } catch (error) {
-                logger.warn('falha ao forcar persistencia de creds antes de reconectar', { err: error })
+                logger.warn('failed to force credentials persistence before reconnect', { err: error })
               }
             }
             await reconnect()
@@ -454,7 +454,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
                 void sqlStore.setBlocklist({ jid, isBlocked: true })
               }
             } catch (error) {
-              logger.warn('falha ao sincronizar blocklist', { err: error })
+              logger.warn('failed to sync blocklist', { err: error })
             }
           }
           const groupsSnapshot = await syncGroupsOnConnect()
@@ -480,7 +480,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       )
     },
     'chats.upsert': (chats) => {
-      logger.debug('evento do Baileys recebido', { event: 'chats.upsert', count: chats.length })
+      logger.debug('Baileys event received', { event: 'chats.upsert', count: chats.length })
       const actorJid = resolveSelfJid()
       for (const chat of chats) {
         if (!chat.id) continue
@@ -488,7 +488,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'chats.update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'chats.update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'chats.update', count: updates.length })
       const actorJid = resolveSelfJid()
       for (const update of updates) {
         const id = (update as { id?: string | null }).id
@@ -498,7 +498,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
     },
     'lid-mapping.update': ({ lid, pn }) => logEvent('lid-mapping.update', { lid, pn }, { actorJid: resolveSelfJid() }),
     'chats.delete': (ids) => {
-      logger.debug('evento do Baileys recebido', { event: 'chats.delete', count: ids.length })
+      logger.debug('Baileys event received', { event: 'chats.delete', count: ids.length })
       const actorJid = resolveSelfJid()
       for (const id of ids) {
         recordEvent('chats.delete', { id }, { chatJid: id, actorJid })
@@ -506,7 +506,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
     },
     'presence.update': ({ id, presences }) => logEvent('presence.update', { id, count: Object.keys(presences).length }, { chatJid: id, actorJid: resolveSelfJid() }),
     'contacts.upsert': (contacts) => {
-      logger.debug('evento do Baileys recebido', { event: 'contacts.upsert', count: contacts.length })
+      logger.debug('Baileys event received', { event: 'contacts.upsert', count: contacts.length })
       const actorJid = resolveSelfJid()
       for (const contact of contacts) {
         if (!contact.id) continue
@@ -514,7 +514,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'contacts.update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'contacts.update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'contacts.update', count: updates.length })
       const actorJid = resolveSelfJid()
       for (const update of updates) {
         const id = (update as { id?: string | null }).id
@@ -529,7 +529,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
         return
       }
       if ('keys' in data) {
-        logger.debug('evento do Baileys recebido', { event: 'messages.delete', count: data.keys.length })
+        logger.debug('Baileys event received', { event: 'messages.delete', count: data.keys.length })
         for (const key of data.keys) {
           const messageKey = toEventMessageKey(key)
           if (!messageKey) continue
@@ -543,7 +543,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       logEvent('messages.delete', { count: 0 }, { actorJid: selfJid })
     },
     'messages.update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'messages.update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'messages.update', count: updates.length })
       const selfJid = resolveSelfJid()
       for (const { key, update } of updates) {
         persistDevicesFromMessageKey(key, 'messages.update')
@@ -556,7 +556,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'messages.media-update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'messages.media-update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'messages.media-update', count: updates.length })
       const selfJid = resolveSelfJid()
       for (const item of updates) {
         const key = (item as { key?: { remoteJid?: string | null; id?: string | null; fromMe?: boolean | null; participant?: string | null } }).key
@@ -573,7 +573,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'messages.upsert': async (event) => {
-      logger.info('messages.upsert recebido', {
+      logger.info('messages.upsert received', {
         count: event.messages.length,
         type: event.type,
       })
@@ -585,7 +585,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
             await Promise.allSettled(refreshTasks)
           }
         }
-        logger.debug('evento do Baileys recebido', {
+        logger.debug('Baileys event received', {
           event: 'messages.upsert',
           count: event.messages.length,
           type: event.type,
@@ -613,7 +613,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
           }
         }
       } catch (error) {
-        logger.error('falha ao processar messages.upsert', {
+        logger.error('failed to process messages.upsert', {
           err: error,
           count: event.messages.length,
           type: event.type,
@@ -626,7 +626,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
               chatJid: key.remoteJid,
               messageId: key.id ?? null,
               senderJid: key.participant ?? null,
-              reason: error instanceof Error ? error.message : 'erro ao processar message.upsert',
+              reason: error instanceof Error ? error.message : 'error processing message.upsert',
               data: { error, type: event.type },
             })
           }
@@ -634,7 +634,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'messages.reaction': (reactions) => {
-      logger.debug('evento do Baileys recebido', { event: 'messages.reaction', count: reactions.length })
+      logger.debug('Baileys event received', { event: 'messages.reaction', count: reactions.length })
       for (const reaction of reactions) {
         const reactionAny = reaction as {
           key?: { remoteJid?: string | null; id?: string | null; fromMe?: boolean | null; participant?: string | null }
@@ -652,7 +652,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'message-receipt.update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'message-receipt.update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'message-receipt.update', count: updates.length })
       for (const update of updates) {
         const updateAny = update as {
           key?: { remoteJid?: string | null; id?: string | null; fromMe?: boolean | null; participant?: string | null }
@@ -669,7 +669,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'groups.upsert': (groups) => {
-      logger.debug('evento do Baileys recebido', { event: 'groups.upsert', count: groups.length })
+      logger.debug('Baileys event received', { event: 'groups.upsert', count: groups.length })
       const actorJid = resolveSelfJid()
       for (const group of groups) {
         if (!group.id) continue
@@ -677,7 +677,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'groups.update': (updates) => {
-      logger.debug('evento do Baileys recebido', { event: 'groups.update', count: updates.length })
+      logger.debug('Baileys event received', { event: 'groups.update', count: updates.length })
       for (const update of updates) {
         const id = (update as { id?: string | null }).id
         if (!id) continue
@@ -686,7 +686,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'group-participants.update': ({ id, action, participants, author }) => {
-      logger.debug('evento do Baileys recebido', {
+      logger.debug('Baileys event received', {
         event: 'group-participants.update',
         id,
         action,
@@ -729,7 +729,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
     },
     'group.member-tag.update': ({ groupId, participant, label }) => logEvent('group.member-tag.update', { groupId, participant, label }, { groupJid: groupId, targetJid: participant, actorJid: resolveSelfJid() }),
     'blocklist.set': ({ blocklist }) => {
-      logger.debug('evento do Baileys recebido', { event: 'blocklist.set', count: blocklist.length })
+      logger.debug('Baileys event received', { event: 'blocklist.set', count: blocklist.length })
       const actorJid = resolveSelfJid()
       for (const jid of blocklist) {
         recordEvent('blocklist.set', { jid }, { targetJid: jid, actorJid })
@@ -739,7 +739,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     'blocklist.update': ({ blocklist, type }) => {
-      logger.debug('evento do Baileys recebido', { event: 'blocklist.update', count: blocklist.length, type })
+      logger.debug('Baileys event received', { event: 'blocklist.update', count: blocklist.length, type })
       const actorJid = resolveSelfJid()
       if (sqlStore.enabled) {
         const isBlocked = type !== 'remove'
@@ -750,7 +750,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
       }
     },
     call: (calls) => {
-      logger.debug('evento do Baileys recebido', { event: 'call', count: calls.length })
+      logger.debug('Baileys event received', { event: 'call', count: calls.length })
       for (const call of calls) {
         const entry = call as { chatId?: string | null; groupJid?: string | null; from?: string | null; id?: string | null; status?: string | null }
         const chatJid = entry.chatId ?? null

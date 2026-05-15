@@ -236,11 +236,11 @@ describe('socket', () => {
     await createSocket('conn', logger)
 
     expect(store.bindLidMappingStore).not.toHaveBeenCalled()
-    expect(logger.warn).toHaveBeenCalledWith('falha ao buscar a última versão do Baileys, usando fallback', { err: versionError })
+    expect(logger.warn).toHaveBeenCalledWith('failed to fetch latest Baileys version, using fallback', { err: versionError })
 
     ev.emit('creds.update')
     await Promise.resolve()
-    expect(logger.error).toHaveBeenCalledWith('erro ao salvar credenciais durante ciclo de vida', {
+    expect(logger.error).toHaveBeenCalledWith('error saving credentials during lifecycle', {
       err: persistError,
     })
   })
@@ -301,7 +301,7 @@ describe('socket', () => {
     const { createSocket } = await import('../src/core/connection/socket.ts')
     await createSocket('conn', logger)
 
-    expect(logger.info).toHaveBeenCalledWith('inicializando setup do socket', {
+    expect(logger.info).toHaveBeenCalledWith('initializing socket setup', {
       strategy: 'redis',
       connectionId: 'conn',
     })
@@ -357,7 +357,7 @@ describe('socket', () => {
 
     await created.flushCredsNow?.('manual')
 
-    expect(logger.info).toHaveBeenCalledWith('forcando persistencia imediata de credenciais', {
+    expect(logger.info).toHaveBeenCalledWith('forcing immediate credentials persistence', {
       connectionId: 'conn',
       reason: 'manual',
     })
@@ -510,7 +510,7 @@ describe('socket', () => {
     handlers.SIGTERM?.()
     await vi.advanceTimersByTimeAsync(10)
 
-    expect(logger.error).toHaveBeenCalledWith('shutdown demorou demais, forçando encerramento', {
+    expect(logger.error).toHaveBeenCalledWith('shutdown took too long, forcing exit', {
       signal: 'SIGTERM',
     })
     expect(exitSpy).toHaveBeenCalledWith(1)

@@ -44,7 +44,7 @@ describe('health-server', () => {
     const res = await httpGet(19109)
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ status: 'ok' })
-    expect(logger.info).toHaveBeenCalledWith('health server iniciado', expect.objectContaining({ port: 19109 }))
+    expect(logger.info).toHaveBeenCalledWith('health server started', expect.objectContaining({ port: 19109 }))
 
     await handle.stop()
   })

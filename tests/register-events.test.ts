@@ -296,7 +296,7 @@ describe('registerEvents messages.upsert', () => {
 
     await new Promise((resolve) => setImmediate(resolve))
 
-    expect(logger.error).toHaveBeenCalledWith('falha ao processar messages.upsert', {
+    expect(logger.error).toHaveBeenCalledWith('failed to process messages.upsert', {
       err: routerError,
       count: 1,
       type: 'notify',
