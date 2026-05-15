@@ -39,7 +39,7 @@ type SocketWithCredsFlush = ReturnType<typeof makeWASocket> & {
 /** Tipo que representa o formato da versão do protocolo do WhatsApp (ex: [2, 3000, 101]) */
 type SocketVersion = typeof DEFAULT_CONNECTION_CONFIG.version
 
-const VERSION_CACHE_TTL_MS = Math.max(0, Number(process.env.WA_VERSION_CACHE_TTL_MS ?? 24 * 60 * 60 * 1000))
+const VERSION_CACHE_TTL_MS = config.versionCacheTtlMs
 /** Timeout máximo para shutdown gracioso antes de forçar saída em milissegundos */
 const SHUTDOWN_TIMEOUT_MS = Math.max(0, Number(process.env.WA_SHUTDOWN_TIMEOUT_MS ?? 10_000))
 /** Debounce para evitar tempestade de gravações em creds.update em milissegundos */
