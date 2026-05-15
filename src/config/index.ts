@@ -250,6 +250,18 @@ export const config = {
   get backfillFailureBackoffMs() {
     return readNumber(process.env.WA_BACKFILL_FAILURE_BACKOFF_MS, 60_000)
   },
+  /** Base delay in ms for reconnect exponential backoff (WA_RECONNECT_BASE_DELAY_MS). */
+  get reconnectBaseDelayMs() {
+    return readNumber(process.env.WA_RECONNECT_BASE_DELAY_MS, 2_500)
+  },
+  /** Maximum delay cap in ms for reconnect backoff (WA_RECONNECT_MAX_DELAY_MS). */
+  get reconnectMaxDelayMs() {
+    return readNumber(process.env.WA_RECONNECT_MAX_DELAY_MS, 60_000)
+  },
+  /** Maximum reconnect attempts before giving up, 0 = unlimited (WA_RECONNECT_MAX_ATTEMPTS). */
+  get reconnectMaxAttempts() {
+    return readNumber(process.env.WA_RECONNECT_MAX_ATTEMPTS, 0)
+  },
   /** Enables HTTP /health endpoint for liveness probes (WA_HEALTH_ENABLED). */
   get healthEnabled() {
     return readBoolean(process.env.WA_HEALTH_ENABLED, true)

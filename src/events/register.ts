@@ -19,6 +19,8 @@ type RegisterOptions = {
   reconnect: () => Promise<void>
   /** Identificador único da conexão (usado para logs e banco de dados). */
   connectionId: string
+  /** Called when connection reaches the 'open' state — used to reset backoff counters. */
+  onConnected?: () => void
 }
 
 /**
@@ -86,7 +88,7 @@ type EventHandler<K extends keyof BaileysEventMap> = (data: BaileysEventMap[K]) 
  * 
  * @param options Opções de configuração contendo o socket, logger e callbacks de ciclo de vida.
  */
-export function registerEvents({ sock, logger, reconnect, connectionId }: RegisterOptions): void {
+export function registerEvents({ sock, logger, reconnect, connectionId, onConnected }: RegisterOptions): void {
   const socketWithCredsFlush = sock as SocketWithCredsFlush
   const socketWithNewsletterMetadata = sock as SocketWithNewsletterMetadata
   const sqlStore = createSqlStore(connectionId)
@@ -429,6 +431,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
           })()
         }
       } else if (connection === 'open') {
+        onConnected?.()
         logger.info('connection open')
         if (isNewLogin && !restartedAfterNewLogin) {
           restartedAfterNewLogin = true
