@@ -20,6 +20,7 @@ const mockConfig = {
   connectionId: 'default',
   antibanEnabled: false,
   antibanStateSaveIntervalMs: 300000,
+  versionCacheTtlMs: 24 * 60 * 60 * 1000,
 }
 
 vi.mock('baileys', async () => {
