@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Copy pre-built node_modules (patches already applied) and prune dev deps.
 # Avoids re-running npm ci in runtime, so patch-package (devDep) is not needed.
-COPY package*.json ./
+COPY package*.json .npmrc ./
 COPY --from=builder /build/node_modules ./node_modules
 RUN npm prune --omit=dev --ignore-scripts
 
