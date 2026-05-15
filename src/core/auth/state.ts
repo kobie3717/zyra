@@ -5,8 +5,8 @@ import { useMysqlAuthState } from './mysql-auth-state.js'
 import { useRedisAuthState } from './redis-auth-state.js'
 
 /**
- * Interface genérica para o retorno das funções de estado de autenticação.
- * Garante que qualquer estratégia escolhida retorne a estrutura necessária para o Baileys.
+ * Generic interface for authentication state function returns.
+ * Ensures any chosen strategy returns the structure required by Baileys.
  */
 type AuthStateProvider =
   | ReturnType<typeof useMysqlAuthState>
@@ -17,41 +17,41 @@ type AuthStateProvider =
     }>
 
 /**
- * Fábrica de Estratégias de Autenticação (Authentication Strategy Factory).
+ * Authentication Strategy Factory.
  * * @remarks
- * Esta função é o ponto central de decisão para a persistência do bot.
- * Ela avalia as configurações disponíveis e seleciona o driver mais robusto na seguinte ordem:
- * * 1. **MySQL**: Se `mysqlUrl` estiver presente, utiliza a persistência em banco de dados SQL (Recomendado para produção distribuída).
- * 2. **Redis**: Se `redisUrl` estiver presente (e MySQL não), utiliza o Redis para alta performance e volatilidade controlada.
- * 3. **Local File System**: Caso nenhuma URL de banco seja fornecida, utiliza o driver padrão do Baileys para salvar em arquivos JSON locais.
- * * @param connectionId - Identificador único da sessão/instância. Essencial para isolar dados em ambientes multi-instância.
- * * @returns Uma promessa que resolve para um objeto contendo:
- * - `state`: O estado de autenticação (creds e keys) para injetar no `makeWASocket`.
- * - `saveCreds`: A função de callback para persistência de mudanças nas credenciais.
+ * This function is the central decision point for bot persistence.
+ * It evaluates available configurations and selects the most robust driver in the following order:
+ * * 1. **MySQL**: If `mysqlUrl` is present, uses SQL database persistence (Recommended for distributed production).
+ * 2. **Redis**: If `redisUrl` is present (and not MySQL), uses Redis for high performance and controlled volatility.
+ * 3. **Local File System**: If no database URL is provided, uses Baileys default driver to save in local JSON files.
+ * * @param connectionId - Unique session/instance identifier. Essential for isolating data in multi-instance environments.
+ * * @returns A promise that resolves to an object containing:
+ * - `state`: Authentication state (creds and keys) to inject into `makeWASocket`.
+ * - `saveCreds`: Callback function for persisting credential changes.
  * * @example
  * ```typescript
- * const { state, saveCreds } = await getAuthState('sessao_123');
+ * const { state, saveCreds } = await getAuthState('session_123');
  * const sock = makeWASocket({
  * auth: state,
- * // ... outras configs
+ * // ... other configs
  * });
- * * // Ouvir atualização de credenciais
+ * * // Listen for credential updates
  * sock.ev.on('creds.update', saveCreds);
  * ```
  */
 export async function getAuthState(connectionId?: string): Promise<AuthStateProvider> {
-  // 1ª Prioridade: MySQL (Persistência ACID e centralizada)
+  // 1st Priority: MySQL (ACID and centralized persistence)
   if (config.mysqlUrl) {
     return useMysqlAuthState(connectionId)
   }
 
-  // 2ª Prioridade: Redis (Persistência em memória com cache rápido)
+  // 2nd Priority: Redis (In-memory persistence with fast cache)
   if (config.redisUrl) {
     return useRedisAuthState(connectionId)
   }
 
-  // 3ª Prioridade/Fallback: Sistema de Arquivos Local (JSON)
-  // Utilizado geralmente em ambiente de desenvolvimento ou instâncias únicas simples.
+  // 3rd Priority/Fallback: Local File System (JSON)
+  // Generally used in development environment or simple single instances.
   const { state, saveCreds } = await useMultiFileAuthState(resolveAuthDir(connectionId))
 
   return {

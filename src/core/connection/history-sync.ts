@@ -6,8 +6,8 @@ export type HistorySyncPolicy = {
 }
 
 /**
- * Cria uma política de sincronização de histórico isolada por socket.
- * Importante quando um processo gerencia múltiplas conexões.
+ * Creates a history sync policy isolated per socket.
+ * Important when a process manages multiple connections.
  */
 export const createHistorySyncPolicy = (creds: AuthenticationCreds): HistorySyncPolicy => {
   let allowHistorySyncOnce = creds.accountSyncCounter === 0

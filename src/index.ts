@@ -12,7 +12,7 @@ const LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
 const BOOLEAN_VALUES = new Set(['true', 'false'])
 
 /**
- * Realiza validações básicas de ambiente e configuração antes da inicialização (boot).
+ * Performs basic environment and configuration validation before initialization (boot).
  */
 const validateEnvironment = (): ValidationResult => {
   const errors: string[] = []
@@ -23,7 +23,7 @@ const validateEnvironment = (): ValidationResult => {
     if (!raw) return
     const normalized = raw.trim().toLowerCase()
     if (!BOOLEAN_VALUES.has(normalized)) {
-      warnings.push(`${key} deve ser "true" ou "false" (valor atual: "${raw}").`)
+      warnings.push(`${key} must be "true" or "false" (current value: "${raw}").`)
     }
   }
 
@@ -33,25 +33,25 @@ const validateEnvironment = (): ValidationResult => {
       const url = new URL(value)
       const allowed = options.allowedProtocols ?? []
       if (allowed.length && !allowed.includes(url.protocol)) {
-        errors.push(`${key} deve utilizar o protocolo ${allowed.join(' ou ')} (valor atual: "${value}").`)
+        errors.push(`${key} must use protocol ${allowed.join(' or ')} (current value: "${value}").`)
       }
       if (options.requireDatabase) {
         const dbName = url.pathname.replace(/^\//, '').trim()
         if (!dbName) {
-          errors.push(`${key} precisa apontar para um banco de dados (ex: /zyra).`)
+          errors.push(`${key} needs to point to a database (e.g. /zyra).`)
         }
       }
     } catch {
-      errors.push(`${key} não é uma URL válida (valor atual: "${value}").`)
+      errors.push(`${key} is not a valid URL (current value: "${value}").`)
     }
   }
 
   if (!config.authDir.trim()) {
-    errors.push('WA_AUTH_DIR não pode estar vazio.')
+    errors.push('WA_AUTH_DIR cannot be empty.')
   }
 
   if (!LOG_LEVELS.has(config.logLevel)) {
-    warnings.push(`LOG_LEVEL inválido ("${config.logLevel}"). Valores aceitos: ${[...LOG_LEVELS].join(', ')}.`)
+    warnings.push(`Invalid LOG_LEVEL ("${config.logLevel}"). Accepted values: ${[...LOG_LEVELS].join(', ')}.`)
   }
 
   ensureBoolean('WA_PRINT_QR')
@@ -67,34 +67,33 @@ const validateEnvironment = (): ValidationResult => {
   })
 
   if (!config.connectionId.trim()) {
-    errors.push('WA_CONNECTION_ID não pode estar vazio.')
+    errors.push('WA_CONNECTION_ID cannot be empty.')
   }
 
   return { errors, warnings }
 }
 
 /**
- * Inicializa o bot com validação e tratamento de erro padrão.
+ * Initializes the bot with validation and standard error handling.
  */
 const bootstrap = async (): Promise<void> => {
   loadEnv()
 
   const { errors, warnings } = validateEnvironment()
   for (const warning of warnings) {
-    console.warn(`[Aviso] ${warning}`)
+    console.warn(`[Warning] ${warning}`)
   }
   if (errors.length) {
     for (const error of errors) {
-      console.error(`[Erro] ${error}`)
+      console.error(`[Error] ${error}`)
     }
-    process.exitCode = 1
-    return
+    process.exit(1)
   }
 
   await start()
 }
 
 bootstrap().catch((error) => {
-  console.error('Falha ao iniciar o bot:', error)
-  process.exitCode = 1
+  console.error('Failed to start bot:', error)
+  process.exit(1)
 })

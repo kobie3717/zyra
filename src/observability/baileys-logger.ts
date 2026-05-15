@@ -50,7 +50,7 @@ const write =
   }
 
 /**
- * Adapta o logger da aplicacao para o formato esperado pelo Baileys.
+ * Adapts the application logger to the format expected by Baileys.
  */
 export const createBaileysLogger = (base: AppLogger, bindings: Meta = {}): ILogger => ({
   get level() {

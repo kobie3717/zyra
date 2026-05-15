@@ -1,15 +1,15 @@
 import type { Command } from './types.js'
 
 /**
- * Comando simples utilizado para validar se o bot está respondendo.
+ * Simple command used to validate if the bot is responding.
  */
 export const pingCommand: Command = {
-  /** Identificador do comando. */
+  /** Command identifier. */
   name: 'ping',
-  /** Descrição do comando exibida na ajuda. */
-  description: 'Responde pong para verificar se o bot está ativo',
-  /** Executa a resposta de teste. */
+  /** Command description shown in help. */
+  description: 'Responds pong to verify if bot is active',
+  /** Executes test response. */
   async execute(ctx) {
-    await ctx.reply('pong! sistema ativo e operando sem problemas.')
+    await ctx.reply('pong! system active and operating without issues.')
   },
 }

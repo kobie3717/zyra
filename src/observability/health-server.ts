@@ -18,7 +18,7 @@ export function startHealthServer(logger: AppLogger): HealthServerHandle {
   })
 
   server.listen(config.healthPort, config.healthHost, () => {
-    logger.info('health server iniciado', { host: config.healthHost, port: config.healthPort })
+    logger.info('health server started', { host: config.healthHost, port: config.healthPort })
   })
 
   return {

@@ -407,7 +407,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut
         const restartRequired = statusCode === DisconnectReason.restartRequired
 
-        logger.warn('conexão encerrada', { statusCode, restartRequired })
+        logger.warn('connection closed', { statusCode, restartRequired })
         if (statusCode === REACHOUT_TIMELOCK_STATUS_CODE) {
           logger.error('alerta de restricao de conta detectado (463)', {
             statusCode,
@@ -429,10 +429,10 @@ export function registerEvents({ sock, logger, reconnect, connectionId }: Regist
           })()
         }
       } else if (connection === 'open') {
-        logger.info('conexão aberta')
+        logger.info('connection open')
         if (isNewLogin && !restartedAfterNewLogin) {
           restartedAfterNewLogin = true
-          logger.warn('novo login detectado, reiniciando conexão para estabilizar')
+          logger.warn('new login detected, restarting connection to stabilize')
           setTimeout(() => {
             void sock.end(new Error('Restart after new login'))
           }, 1500)

@@ -25,7 +25,7 @@ const computeBackoffMs = (attempt: number): number => {
 
 const ensureRedisUrl = (): string => {
   if (!config.redisUrl) {
-    throw new Error('WA_REDIS_URL nao configurada')
+    throw new Error('WA_REDIS_URL not configured')
   }
   return config.redisUrl
 }
@@ -47,7 +47,7 @@ const createRedisConnection = (): AppRedisClient => {
     },
   })
   client.on('error', (error) => {
-    console.error('falha no cliente Redis', error)
+    console.error('Redis client failure', error)
   })
   client.on('end', () => {
     redisConnectPromise = null
@@ -57,8 +57,8 @@ const createRedisConnection = (): AppRedisClient => {
 }
 
 /**
- * Retorna um cliente Redis singleton pronto para uso.
- * Implementa tentativas de conexão com backoff e permite nova tentativa em chamadas futuras.
+ * Returns a singleton Redis client ready for use.
+ * Implements connection attempts with backoff and allows retry on future calls.
  */
 export async function getRedisClient(): Promise<AppRedisClient> {
   if (redisClient?.isReady) {
@@ -90,7 +90,7 @@ export async function getRedisClient(): Promise<AppRedisClient> {
         await wait(delayMs)
       }
     }
-    throw lastError instanceof Error ? lastError : new Error('falha ao conectar no Redis')
+    throw lastError instanceof Error ? lastError : new Error('failed to connect to Redis')
   })()
     .catch((error) => {
       redisConnectPromise = null
@@ -106,7 +106,7 @@ export async function getRedisClient(): Promise<AppRedisClient> {
 }
 
 /**
- * Encerra o cliente Redis singleton de forma graciosa.
+ * Closes the singleton Redis client gracefully.
  */
 export async function closeRedisClient(): Promise<void> {
   if (!redisClient) return
@@ -124,7 +124,7 @@ export async function closeRedisClient(): Promise<void> {
         await client.disconnect()
       }
     } catch (error) {
-      console.error('falha ao encerrar cliente Redis, desconectando a conexao', error)
+      console.error('failed to close Redis client, disconnecting connection', error)
       await client.disconnect().catch(() => undefined)
     } finally {
       if (redisClient === client) {

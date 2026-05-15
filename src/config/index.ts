@@ -36,229 +36,229 @@ function readCanonicalJidMode(value: string | undefined, fallback: 'pn' | 'lid')
 }
 
 /**
- * Configurações globais da aplicação derivadas das variáveis de ambiente.
- * Centraliza o acesso a parâmetros de conexão, banco de dados, segurança e comportamento do bot.
+ * Global application configuration derived from environment variables.
+ * Centralizes access to connection parameters, database, security and bot behavior.
  */
 export const config = {
-  /** Diretório para armazenamento local de credenciais de autenticação (WA_AUTH_DIR). */
+  /** Directory for local storage of authentication credentials (WA_AUTH_DIR). */
   get authDir() {
     return process.env.WA_AUTH_DIR ?? 'data/auth'
   },
-  /** Prefixo para identificar comandos (WA_COMMAND_PREFIX). */
+  /** Prefix to identify commands (WA_COMMAND_PREFIX). */
   get commandPrefix() {
     return (process.env.WA_COMMAND_PREFIX ?? '!').trim() || '!'
   },
-  /** Se deve imprimir o QR Code no terminal durante o emparelhamento (WA_PRINT_QR). */
+  /** Whether to print QR Code in terminal during pairing (WA_PRINT_QR). */
   get printQRInTerminal() {
     return readBoolean(process.env.WA_PRINT_QR, true)
   },
-  /** Nível de verbosidade dos logs da aplicação (LOG_LEVEL). */
+  /** Application log verbosity level (LOG_LEVEL). */
   get logLevel() {
     return process.env.LOG_LEVEL ?? 'info'
   },
-  /** URL de conexão com o Redis (WA_REDIS_URL). */
+  /** Redis connection URL (WA_REDIS_URL). */
   get redisUrl() {
     return process.env.WA_REDIS_URL
   },
-  /** Prefixo das chaves armazenadas no Redis (WA_REDIS_PREFIX). */
+  /** Prefix for keys stored in Redis (WA_REDIS_PREFIX). */
   get redisPrefix() {
     return process.env.WA_REDIS_PREFIX ?? 'zyra:conexao'
   },
-  /** URL de conexão com o MySQL (MYSQL_URL ou WA_DB_URL). */
+  /** MySQL connection URL (MYSQL_URL or WA_DB_URL). */
   get mysqlUrl() {
     return process.env.MYSQL_URL ?? process.env.WA_DB_URL
   },
-  /** Intervalo em ms para tentar reconexão com o MySQL em caso de falha (WA_MYSQL_RETRY_MS). */
+  /** Interval in ms to attempt MySQL reconnection on failure (WA_MYSQL_RETRY_MS). */
   get mysqlRetryIntervalMs() {
     return readNumber(process.env.WA_MYSQL_RETRY_MS, 60_000)
   },
-  /** Identificador único da conexão do bot (WA_CONNECTION_ID). */
+  /** Unique identifier for bot connection (WA_CONNECTION_ID). */
   get connectionId() {
     return process.env.WA_CONNECTION_ID ?? 'default'
   },
-  /** Se o bot deve processar as próprias mensagens enviadas (WA_ACCEPT_OWN_MESSAGES). */
+  /** Whether bot should process its own sent messages (WA_ACCEPT_OWN_MESSAGES). */
   get allowOwnMessages() {
     return readBoolean(process.env.WA_ACCEPT_OWN_MESSAGES, false)
   },
-  /** Se deve ignorar mensagens de status@broadcast para reduzir ruído de sessão/decriptação (WA_IGNORE_STATUS_BROADCAST). */
+  /** Whether to ignore status@broadcast messages to reduce session/decryption noise (WA_IGNORE_STATUS_BROADCAST). */
   get ignoreStatusBroadcast() {
     return readBoolean(process.env.WA_IGNORE_STATUS_BROADCAST, true)
   },
-  /** Se deve persistir as chaves de autenticação no disco mesmo usando Redis/MySQL (WA_AUTH_PERSIST_KEYS). */
+  /** Whether to persist authentication keys on disk even when using Redis/MySQL (WA_AUTH_PERSIST_KEYS). */
   get authPersistKeysOnDisk() {
     return readBoolean(process.env.WA_AUTH_PERSIST_KEYS, false)
   },
-  /** Se o módulo Anti-Ban está ativado (WA_ANTIBAN_ENABLED). */
+  /** Whether Anti-Ban module is enabled (WA_ANTIBAN_ENABLED). */
   get antibanEnabled() {
     return readBoolean(process.env.WA_ANTIBAN_ENABLED, false)
   },
-  /** Se deve logar detalhadamente as ações do Anti-Ban (WA_ANTIBAN_LOGGING). */
+  /** Whether to log Anti-Ban actions in detail (WA_ANTIBAN_LOGGING). */
   get antibanLogging() {
     return readBoolean(process.env.WA_ANTIBAN_LOGGING, false)
   },
-  /** Diretório para salvar o estado persistente do Anti-Ban (WA_ANTIBAN_STATE_DIR). */
+  /** Directory to save persistent Anti-Ban state (WA_ANTIBAN_STATE_DIR). */
   get antibanStateDir() {
     return process.env.WA_ANTIBAN_STATE_DIR ?? 'data/antiban'
   },
-  /** Intervalo para salvar automaticamente o estado do Anti-Ban (WA_ANTIBAN_STATE_SAVE_MS). */
+  /** Interval to automatically save Anti-Ban state (WA_ANTIBAN_STATE_SAVE_MS). */
   get antibanStateSaveIntervalMs() {
     return readNumber(process.env.WA_ANTIBAN_STATE_SAVE_MS, 300_000)
   },
-  /** Nível de risco no qual o Anti-Ban pausa automaticamente o bot (WA_ANTIBAN_AUTO_PAUSE_AT). */
+  /** Risk level at which Anti-Ban automatically pauses the bot (WA_ANTIBAN_AUTO_PAUSE_AT). */
   get antibanAutoPauseAt() {
     return readRiskLevel(process.env.WA_ANTIBAN_AUTO_PAUSE_AT, 'high')
   },
-  /** Máximo de mensagens por minuto permitidas pelo Anti-Ban (WA_ANTIBAN_MAX_PER_MINUTE). */
+  /** Maximum messages per minute allowed by Anti-Ban (WA_ANTIBAN_MAX_PER_MINUTE). */
   get antibanMaxPerMinute() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MAX_PER_MINUTE)
   },
-  /** Máximo de mensagens por hora permitidas pelo Anti-Ban (WA_ANTIBAN_MAX_PER_HOUR). */
+  /** Maximum messages per hour allowed by Anti-Ban (WA_ANTIBAN_MAX_PER_HOUR). */
   get antibanMaxPerHour() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MAX_PER_HOUR)
   },
-  /** Máximo de mensagens por dia permitidas pelo Anti-Ban (WA_ANTIBAN_MAX_PER_DAY). */
+  /** Maximum messages per day allowed by Anti-Ban (WA_ANTIBAN_MAX_PER_DAY). */
   get antibanMaxPerDay() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MAX_PER_DAY)
   },
-  /** Atraso mínimo entre mensagens em ms (WA_ANTIBAN_MIN_DELAY_MS). */
+  /** Minimum delay between messages in ms (WA_ANTIBAN_MIN_DELAY_MS). */
   get antibanMinDelayMs() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MIN_DELAY_MS)
   },
-  /** Atraso máximo entre mensagens em ms (WA_ANTIBAN_MAX_DELAY_MS). */
+  /** Maximum delay between messages in ms (WA_ANTIBAN_MAX_DELAY_MS). */
   get antibanMaxDelayMs() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MAX_DELAY_MS)
   },
-  /** Atraso adicional ao iniciar chat com novo contato (WA_ANTIBAN_NEW_CHAT_DELAY_MS). */
+  /** Additional delay when starting chat with new contact (WA_ANTIBAN_NEW_CHAT_DELAY_MS). */
   get antibanNewChatDelayMs() {
     return readOptionalNumber(process.env.WA_ANTIBAN_NEW_CHAT_DELAY_MS)
   },
-  /** Máximo de mensagens idênticas antes de bloquear (WA_ANTIBAN_MAX_IDENTICAL_MESSAGES). */
+  /** Maximum identical messages before blocking (WA_ANTIBAN_MAX_IDENTICAL_MESSAGES). */
   get antibanMaxIdenticalMessages() {
     return readOptionalNumber(process.env.WA_ANTIBAN_MAX_IDENTICAL_MESSAGES)
   },
-  /** Janela em ms para contagem de mensagens idênticas (WA_ANTIBAN_IDENTICAL_WINDOW_MS). */
+  /** Window in ms for counting identical messages (WA_ANTIBAN_IDENTICAL_WINDOW_MS). */
   get antibanIdenticalMessageWindowMs() {
     return readOptionalNumber(process.env.WA_ANTIBAN_IDENTICAL_WINDOW_MS)
   },
-  /** Quantidade de mensagens em burst permitidas (WA_ANTIBAN_BURST_ALLOWANCE). */
+  /** Number of burst messages allowed (WA_ANTIBAN_BURST_ALLOWANCE). */
   get antibanBurstAllowance() {
     return readOptionalNumber(process.env.WA_ANTIBAN_BURST_ALLOWANCE)
   },
-  /** Período de aquecimento da conta em dias (WA_ANTIBAN_WARMUP_DAYS). */
+  /** Account warm-up period in days (WA_ANTIBAN_WARMUP_DAYS). */
   get antibanWarmUpDays() {
     return readOptionalNumber(process.env.WA_ANTIBAN_WARMUP_DAYS)
   },
-  /** Limite de mensagens no primeiro dia de aquecimento (WA_ANTIBAN_WARMUP_DAY1_LIMIT). */
+  /** Message limit on first day of warm-up (WA_ANTIBAN_WARMUP_DAY1_LIMIT). */
   get antibanWarmUpDay1Limit() {
     return readOptionalNumber(process.env.WA_ANTIBAN_WARMUP_DAY1_LIMIT)
   },
-  /** Fator de crescimento diário do limite durante o aquecimento (WA_ANTIBAN_WARMUP_GROWTH_FACTOR). */
+  /** Daily growth factor for limit during warm-up (WA_ANTIBAN_WARMUP_GROWTH_FACTOR). */
   get antibanWarmUpGrowthFactor() {
     return readOptionalNumber(process.env.WA_ANTIBAN_WARMUP_GROWTH_FACTOR)
   },
-  /** Horas de inatividade para considerar que o aquecimento foi interrompido (WA_ANTIBAN_INACTIVITY_THRESHOLD_HOURS). */
+  /** Hours of inactivity to consider warm-up interrupted (WA_ANTIBAN_INACTIVITY_THRESHOLD_HOURS). */
   get antibanInactivityThresholdHours() {
     return readOptionalNumber(process.env.WA_ANTIBAN_INACTIVITY_THRESHOLD_HOURS)
   },
-  /** Habilita mitigação LID/PN (JID canonicalizer) no antiban (WA_ANTIBAN_JID_CANONICALIZER_ENABLED). */
+  /** Enables LID/PN mitigation (JID canonicalizer) in antiban (WA_ANTIBAN_JID_CANONICALIZER_ENABLED). */
   get antibanJidCanonicalizerEnabled() {
     return readBoolean(process.env.WA_ANTIBAN_JID_CANONICALIZER_ENABLED, true)
   },
-  /** Forma canônica usada na mitigação LID/PN: pn ou lid (WA_ANTIBAN_LID_CANONICAL). */
+  /** Canonical form used in LID/PN mitigation: pn or lid (WA_ANTIBAN_LID_CANONICAL). */
   get antibanLidCanonical() {
     return readCanonicalJidMode(process.env.WA_ANTIBAN_LID_CANONICAL, 'pn')
   },
-  /** Quantidade máxima de mapeamentos LID↔PN em memória (WA_ANTIBAN_LID_MAX_ENTRIES). */
+  /** Maximum LID↔PN mappings in memory (WA_ANTIBAN_LID_MAX_ENTRIES). */
   get antibanLidMaxEntries() {
     return readOptionalNumber(process.env.WA_ANTIBAN_LID_MAX_ENTRIES)
   },
-  /** Habilita detector de sessão surda (socket conectado sem eventos de mensagem). */
+  /** Enables deaf session detector (socket connected without message events). */
   get antibanDeafSessionEnabled() {
     return readBoolean(process.env.WA_ANTIBAN_DEAF_SESSION_ENABLED, true)
   },
-  /** Timeout em ms sem atividade para considerar sessão "surda". */
+  /** Timeout in ms without activity to consider session "deaf". */
   get antibanDeafSessionTimeoutMs() {
     return readNumber(process.env.WA_ANTIBAN_DEAF_SESSION_TIMEOUT_MS, 5 * 60_000)
   },
-  /** Uptime mínimo em ms antes de começar a detectar sessão "surda". */
+  /** Minimum uptime in ms before starting to detect "deaf" session. */
   get antibanDeafSessionMinUptimeMs() {
     return readNumber(process.env.WA_ANTIBAN_DEAF_SESSION_MIN_UPTIME_MS, 2 * 60_000)
   },
-  /** Se o detector de sessão "surda" deve forçar auto-reconnect. */
+  /** Whether "deaf" session detector should force auto-reconnect. */
   get antibanDeafSessionAutoReconnect() {
     return readBoolean(process.env.WA_ANTIBAN_DEAF_SESSION_AUTO_RECONNECT, true)
   },
-  /** Habilita endpoint Prometheus /metrics para estatísticas do Anti-Ban. */
+  /** Enables Prometheus /metrics endpoint for Anti-Ban statistics. */
   get antibanMetricsEnabled() {
     return readBoolean(process.env.WA_ANTIBAN_METRICS_ENABLED, false)
   },
-  /** Host de bind do servidor de métricas. */
+  /** Bind host for metrics server. */
   get antibanMetricsHost() {
     return process.env.WA_ANTIBAN_METRICS_HOST ?? '0.0.0.0'
   },
-  /** Porta do servidor de métricas. */
+  /** Port for metrics server. */
   get antibanMetricsPort() {
     return readNumber(process.env.WA_ANTIBAN_METRICS_PORT, 9108)
   },
-  /** TTL do cache da versão do protocolo WhatsApp (WA_VERSION_CACHE_TTL_MS). */
+  /** TTL for WhatsApp protocol version cache (WA_VERSION_CACHE_TTL_MS). */
   get versionCacheTtlMs() {
     return readNumber(process.env.WA_VERSION_CACHE_TTL_MS, 24 * 60 * 60 * 1000)
   },
-  /** Path HTTP para exposição das métricas. */
+  /** HTTP path for metrics exposure. */
   get antibanMetricsPath() {
     const value = (process.env.WA_ANTIBAN_METRICS_PATH ?? '/metrics').trim()
     if (!value) return '/metrics'
     return value.startsWith('/') ? value : `/${value}`
   },
-  /** Se deve baixar automaticamente mídias recebidas para disco local (WA_MEDIA_AUTO_DOWNLOAD). */
+  /** Whether to automatically download received media to local disk (WA_MEDIA_AUTO_DOWNLOAD). */
   get mediaAutoDownload() {
     return readBoolean(process.env.WA_MEDIA_AUTO_DOWNLOAD, false)
   },
-  /** Diretório base para salvar mídias baixadas localmente (WA_MEDIA_DOWNLOAD_DIR). */
+  /** Base directory to save downloaded media locally (WA_MEDIA_DOWNLOAD_DIR). */
   get mediaDownloadDir() {
     return process.env.WA_MEDIA_DOWNLOAD_DIR ?? 'data/media'
   },
-  /** Limite máximo de armazenamento local de mídia em bytes (WA_MEDIA_MAX_BYTES). */
+  /** Maximum local media storage limit in bytes (WA_MEDIA_MAX_BYTES). */
   get mediaMaxBytes() {
     return readNumber(process.env.WA_MEDIA_MAX_BYTES, 10 * 1024 * 1024 * 1024)
   },
-  /** Quantidade de dias para retenção de mídias locais (WA_MEDIA_RETENTION_DAYS). */
+  /** Number of days for local media retention (WA_MEDIA_RETENTION_DAYS). */
   get mediaRetentionDays() {
     return readNumber(process.env.WA_MEDIA_RETENTION_DAYS, 7)
   },
-  /** TTL em ms para cache de metadados de newsletter (WA_NEWSLETTER_METADATA_SYNC_TTL_MS). */
+  /** TTL in ms for newsletter metadata cache (WA_NEWSLETTER_METADATA_SYNC_TTL_MS). */
   get newsletterMetadataSyncTtlMs() {
     return readNumber(process.env.WA_NEWSLETTER_METADATA_SYNC_TTL_MS, 5 * 60_000)
   },
-  /** TTL em ms para retry de metadados de newsletter após falha (WA_NEWSLETTER_METADATA_RETRY_TTL_MS). */
+  /** TTL in ms for newsletter metadata retry after failure (WA_NEWSLETTER_METADATA_RETRY_TTL_MS). */
   get newsletterMetadataRetryTtlMs() {
     return readNumber(process.env.WA_NEWSLETTER_METADATA_RETRY_TTL_MS, 30_000)
   },
-  /** Base em ms para backoff de retry de mídia de newsletter (WA_NEWSLETTER_MEDIA_RETRY_BASE_MS). */
+  /** Base in ms for newsletter media retry backoff (WA_NEWSLETTER_MEDIA_RETRY_BASE_MS). */
   get newsletterMediaRetryBaseMs() {
     return readNumber(process.env.WA_NEWSLETTER_MEDIA_RETRY_BASE_MS, 10_000)
   },
-  /** Máximo de tentativas de retry de mídia de newsletter (WA_NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS). */
+  /** Maximum retry attempts for newsletter media (WA_NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS). */
   get newsletterMediaRetryMaxAttempts() {
     return readNumber(process.env.WA_NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS, 5)
   },
-  /** Máximo de falhas consecutivas no worker de backfill antes de encerrar (WA_BACKFILL_MAX_FAILURES). */
+  /** Maximum consecutive failures in backfill worker before shutdown (WA_BACKFILL_MAX_FAILURES). */
   get backfillMaxFailures() {
     return readNumber(process.env.WA_BACKFILL_MAX_FAILURES, 5)
   },
-  /** Espera em ms entre ciclos de backfill com falha (WA_BACKFILL_FAILURE_BACKOFF_MS). */
+  /** Wait in ms between failed backfill cycles (WA_BACKFILL_FAILURE_BACKOFF_MS). */
   get backfillFailureBackoffMs() {
     return readNumber(process.env.WA_BACKFILL_FAILURE_BACKOFF_MS, 60_000)
   },
-  /** Habilita endpoint HTTP /health para probes de liveness (WA_HEALTH_ENABLED). */
+  /** Enables HTTP /health endpoint for liveness probes (WA_HEALTH_ENABLED). */
   get healthEnabled() {
     return readBoolean(process.env.WA_HEALTH_ENABLED, true)
   },
-  /** Porta do servidor de health check (WA_HEALTH_PORT). */
+  /** Port for health check server (WA_HEALTH_PORT). */
   get healthPort() {
     return readNumber(process.env.WA_HEALTH_PORT, 9109)
   },
-  /** Host de bind do servidor de health check (WA_HEALTH_HOST). */
+  /** Bind host for health check server (WA_HEALTH_HOST). */
   get healthHost() {
     return process.env.WA_HEALTH_HOST ?? '0.0.0.0'
   },
