@@ -1313,9 +1313,9 @@ export function createSqlStore(connectionId?: string): SqlStore {
            )
            VALUES (?, ?, ?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE
-             display_name = VALUES(display_name),
-             last_message_ts = VALUES(last_message_ts),
-             unread_count = VALUES(unread_count),
+             display_name = COALESCE(VALUES(display_name), chats.display_name),
+             last_message_ts = COALESCE(VALUES(last_message_ts), chats.last_message_ts),
+             unread_count = COALESCE(VALUES(unread_count), chats.unread_count),
              data_json = VALUES(data_json),
              deleted_at = NULL`,
             values
@@ -1394,7 +1394,7 @@ export function createSqlStore(connectionId?: string): SqlStore {
              SET display_name = COALESCE(display_name, ?)
              WHERE connection_id = ?
                AND jid = ?
-               AND display_name IS NULL`,
+               AND (display_name IS NULL OR display_name = '')`,
               [displayName, resolvedConnectionId, normalizedJid]
             )
           }

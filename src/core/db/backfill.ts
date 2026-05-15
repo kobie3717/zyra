@@ -714,6 +714,44 @@ async function main() {
       )
       logAffected(`users.display_name(${aliasType})`, result)
     }
+
+    const [fromContacts] = await pool.execute<ResultSetHeader>(
+      `UPDATE users u
+       INNER JOIN user_identifiers ui
+         ON ui.connection_id = u.connection_id
+        AND ui.user_id = u.id
+        AND ui.id_type = 'jid'
+       INNER JOIN wa_contacts_cache wc
+         ON wc.connection_id = ui.connection_id
+        AND wc.jid = ui.id_value
+       SET u.display_name = wc.display_name
+       WHERE u.connection_id = ?
+         AND (u.display_name IS NULL OR u.display_name = '')
+         AND wc.display_name IS NOT NULL
+         AND wc.display_name <> ''`,
+      [connectionId]
+    )
+    logAffected('users.display_name(contacts)', fromContacts)
+
+    const [fromChats] = await pool.execute<ResultSetHeader>(
+      `UPDATE users u
+       INNER JOIN user_identifiers ui
+         ON ui.connection_id = u.connection_id
+        AND ui.user_id = u.id
+        AND ui.id_type = 'jid'
+       INNER JOIN chats c
+         ON c.connection_id = ui.connection_id
+        AND c.jid = ui.id_value
+       SET u.display_name = c.display_name
+       WHERE u.connection_id = ?
+         AND (u.display_name IS NULL OR u.display_name = '')
+         AND c.jid NOT LIKE '%@g.us'
+         AND c.jid NOT LIKE '%@newsletter'
+         AND c.display_name IS NOT NULL
+         AND c.display_name <> ''`,
+      [connectionId]
+    )
+    logAffected('users.display_name(chats)', fromChats)
   }
 
   const backfillContactsDisplayNames = async () => {
@@ -805,6 +843,26 @@ async function main() {
       [connectionId]
     )
     logAffected('chats.display_name(contacts)', contactNames)
+
+    const [userNames] = await pool.execute<ResultSetHeader>(
+      `UPDATE chats c
+       INNER JOIN user_identifiers ui
+         ON ui.connection_id = c.connection_id
+        AND ui.id_type = 'jid'
+        AND ui.id_value = c.jid
+       INNER JOIN users u
+         ON u.connection_id = ui.connection_id
+        AND u.id = ui.user_id
+       SET c.display_name = u.display_name
+       WHERE c.connection_id = ?
+         AND c.jid NOT LIKE '%@g.us'
+         AND c.jid NOT LIKE '%@newsletter'
+         AND (c.display_name IS NULL OR c.display_name = '')
+         AND u.display_name IS NOT NULL
+         AND u.display_name <> ''`,
+      [connectionId]
+    )
+    logAffected('chats.display_name(users)', userNames)
 
     const [messageTs] = await pool.execute<ResultSetHeader>(
       `UPDATE chats c
@@ -1382,10 +1440,11 @@ async function main() {
       const before = await collectBackfillMetrics()
       if (!finalBefore) finalBefore = before
 
+      // Prioridade crítica: reduzir nulos de identidade/nomes visíveis primeiro.
+      await runStep('contacts_user_id', backfillContactsUserId)
+      await runStep('lid_mappings', backfillLidMappings)
       await runStep('users_display_names', backfillUsersDisplayNames)
       await runStep('contacts_display_names', backfillContactsDisplayNames)
-      await runStep('lid_mappings', backfillLidMappings)
-      await runStep('contacts_user_id', backfillContactsUserId)
       await runStep('chats', backfillChats)
       await runStep('messages', backfillMessages)
       await runStep('message_events', backfillMessageEvents)
