@@ -93,9 +93,12 @@ describe('antiban helper', () => {
       sock,
       expect.objectContaining({
         logging: false,
-        maxPerMinute: 160,
-        maxPerHour: 4000,
-        maxPerDay: 30000,
+        maxPerMinute: 8,
+        maxPerHour: 200,
+        maxPerDay: 1500,
+        minDelayMs: 1500,
+        maxDelayMs: 5000,
+        newChatDelayMs: 3000,
         maxIdenticalMessages: 200,
         identicalMessageWindowMs: 60000,
         burstAllowance: 20,
@@ -111,6 +114,10 @@ describe('antiban helper', () => {
           resolverConfig: expect.objectContaining({ canonical: 'pn', maxEntries: 10000 }),
         }),
         health: expect.objectContaining({ autoPauseAt: 'high' }),
+        timelock: expect.objectContaining({
+          onTimelockDetected: expect.any(Function),
+          onTimelockLifted: expect.any(Function),
+        }),
       }),
       { day: 1 }
     )
