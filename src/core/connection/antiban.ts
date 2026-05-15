@@ -17,9 +17,9 @@ type SocketWithAntiBan = {
 }
 
 const buildRateLimiterConfig = () => ({
-  ...(config.antibanMaxPerMinute !== undefined ? { maxPerMinute: config.antibanMaxPerMinute * 20 } : {}),
-  ...(config.antibanMaxPerHour !== undefined ? { maxPerHour: config.antibanMaxPerHour * 20 } : {}),
-  ...(config.antibanMaxPerDay !== undefined ? { maxPerDay: config.antibanMaxPerDay * 20 } : {}),
+  ...(config.antibanMaxPerMinute !== undefined ? { maxPerMinute: config.antibanMaxPerMinute } : {}),
+  ...(config.antibanMaxPerHour !== undefined ? { maxPerHour: config.antibanMaxPerHour } : {}),
+  ...(config.antibanMaxPerDay !== undefined ? { maxPerDay: config.antibanMaxPerDay } : {}),
   ...(config.antibanMinDelayMs !== undefined ? { minDelayMs: config.antibanMinDelayMs } : {}),
   ...(config.antibanMaxDelayMs !== undefined ? { maxDelayMs: config.antibanMaxDelayMs } : {}),
   ...(config.antibanNewChatDelayMs !== undefined ? { newChatDelayMs: config.antibanNewChatDelayMs } : {}),
