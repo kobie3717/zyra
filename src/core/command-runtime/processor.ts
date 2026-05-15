@@ -1,6 +1,7 @@
 import { type WAMessage, type WASocket, type proto } from '@whiskeysockets/baileys'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import linkify from 'linkifyjs'
 import { commands } from '../../commands/index.js'
 import type { AppLogger } from '../../observability/logger.js'
 import type { SqlStore } from '../../store/sql-store.js'
@@ -22,10 +23,6 @@ const REACHOUT_TIMELOCK_STATUS_CODE = 463
 const ANTIBAN_BLOCKED_MESSAGE = '[baileys-antiban] Message blocked'
 const ANTIBAN_SEND_MAX_ATTEMPTS = 3
 const ANTIBAN_SEND_BASE_DELAY_MS = 2_000
-const LINK_PATTERN =
-  /\b(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/i
-const LINK_EXTRACT_PATTERN =
-  /(?<!@)\b(?:https?:\/\/[^\s<>"'`]+|ftp:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+|chat\.whatsapp\.com\/[^\s<>"'`]+|wa\.me\/[^\s<>"'`]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'`)]*)?)/gi
 const NON_LINK_FILE_EXTENSIONS = new Set([
   'json',
   'txt',
@@ -137,6 +134,31 @@ const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const parseLinkToUrl = (value: string): URL | null => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  try {
+    return new URL(normalized)
+  } catch {
+    return null
+  }
+}
+
+const hasDetectableLink = (text: string): boolean => {
+  for (const match of linkify.find(text)) {
+    if (!match.isLink || match.type === 'email') continue
+    const candidate = (match.value ?? '').trim().replace(/[)\],.!?;:]+$/g, '')
+    const parsed = parseLinkToUrl(candidate)
+    if (!parsed) continue
+    if (!['http:', 'https:', 'ftp:'].includes(parsed.protocol)) continue
+    const tld = parsed.hostname.toLowerCase().split('.').at(-1) ?? ''
+    if (NON_LINK_FILE_EXTENSIONS.has(tld)) continue
+    return true
+  }
+  return false
+}
+
 /**
  * Coleta menções e autor citado para comandos que operam em participantes.
  * @param message Mensagem recebida.
@@ -215,7 +237,7 @@ const logIncomingMessage = async (context: IncomingCommandEnvelope, logger: AppL
   const text = context.text.length > 200 ? `${context.text.slice(0, 200)}...` : context.text || null
   const compactText = text ? text.replace(/\s+/g, ' ').trim() : null
   const hasMedia = messageType ? MEDIA_TYPES.has(messageType) : false
-  const hasLink = Boolean(context.text && LINK_PATTERN.test(context.text))
+  const hasLink = Boolean(context.text && hasDetectableLink(context.text))
   const logParts = [
     `chatId=${context.chatId}`,
     `messageId=${messageKey.id ?? ''}`,
@@ -541,43 +563,33 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
   }
 
   const extractLinks = (text: string): string[] => {
-    const matches = Array.from(text.matchAll(LINK_EXTRACT_PATTERN))
-    return matches
-      .map((match) => {
-        const entry = (match[0] ?? '').trim().replace(/[)\],.!?;:]+$/g, '')
-        const index = match.index ?? 0
-        const previousChar = index > 0 ? text[index - 1] : ''
-        const startsAsExplicitUrl = /^(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)/i.test(entry)
-        return { entry, previousChar, startsAsExplicitUrl }
-      })
-      .filter(({ entry, previousChar, startsAsExplicitUrl }) => {
-        if (!entry) return false
-        if (!startsAsExplicitUrl && /[@._%+-]/.test(previousChar)) return false
-        return true
-      })
-      .map(({ entry }) => entry)
-      .filter((entry) => {
-        if (/^(?:https?:\/\/|ftp:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)/i.test(entry)) return true
-        const [host] = entry.split('/')
-        const parts = host.toLowerCase().split('.')
-        const tld = parts[parts.length - 1]
-        return !NON_LINK_FILE_EXTENSIONS.has(tld)
-      })
-      .filter(Boolean)
+    const matches = linkify.find(text)
+    const deduped = new Set<string>()
+    for (const match of matches) {
+      if (!match.isLink || match.type === 'email') continue
+      const candidate = (match.value ?? '').trim().replace(/[)\],.!?;:]+$/g, '')
+      if (!candidate) continue
+      const parsed = parseLinkToUrl(candidate)
+      if (!parsed) continue
+      if (!['http:', 'https:', 'ftp:'].includes(parsed.protocol)) continue
+      const tld = parsed.hostname.toLowerCase().split('.').at(-1) ?? ''
+      if (NON_LINK_FILE_EXTENSIONS.has(tld)) continue
+      deduped.add(candidate)
+    }
+    return [...deduped]
   }
 
   const normalizeLinkToUrl = (link: string): URL | null => {
-    const normalized = link.startsWith('http://') || link.startsWith('https://') ? link : `https://${link}`
-    try {
-      return new URL(normalized)
-    } catch {
-      return null
-    }
+    return parseLinkToUrl(link)
   }
 
   const isAllowedByDomain = (url: URL, allowedDomains: string[]): boolean => {
     const host = url.hostname.toLowerCase()
-    return allowedDomains.some((domain) => host === domain || host.endsWith(`.${domain}`))
+    return allowedDomains.some((domain) => {
+      const normalizedDomain = domain.trim().toLowerCase()
+      if (!normalizedDomain) return false
+      return host === normalizedDomain || host.endsWith(`.${normalizedDomain}`)
+    })
   }
 
   const extractInviteCode = (url: URL): string | null => {
@@ -595,7 +607,7 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
 
   const enforceAntilink = async (context: IncomingCommandEnvelope): Promise<void> => {
     if (!context.isGroup) return
-    if (!context.text || !LINK_PATTERN.test(context.text)) return
+    if (!context.text) return
 
     const enabled = await groupFeatureStore.isAntilinkEnabled(context.chatId)
     if (!enabled) {
@@ -653,6 +665,9 @@ export function createCommandProcessor({ logger, sqlStore }: CreateCommandProces
 
     if (senderIsAdmin) {
       logger.info('antilink ignorado: remetente admin', { chatId: context.chatId, sender: context.sender, links })
+      await context.sock.sendMessage(context.chatId, {
+        text: `ℹ️ Link detectado na mensagem de ${context.message.pushName ?? 'um administrador'}, mas nenhuma remoção foi aplicada porque o remetente é admin.`,
+      })
       return
     }
     try {

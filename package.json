@@ -38,6 +38,7 @@
     "dotenv": "^16.4.5",
     "fflate": "^0.8.2",
     "link-preview-js": "4.0.1",
+    "linkifyjs": "^4.3.3",
     "mysql2": "^3.20.0",
     "pm2": "^7.0.1",
     "qrcode-terminal": "^0.12.0",
