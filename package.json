@@ -59,10 +59,10 @@
     "vite": "8.0.5",
     "basic-ftp": "5.3.1",
     "libsignal": {
-      "protobufjs": "7.5.5"
+      "protobufjs": "7.5.8"
     },
     "@whiskeysockets/libsignal-node": {
-      "protobufjs": "7.5.5"
+      "protobufjs": "7.5.8"
     },
     "link-preview-js": "4.0.1"
   }
