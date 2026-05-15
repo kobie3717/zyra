@@ -98,9 +98,17 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
   const newsletterMetadataSync = new Map<string, { nextAttemptAt: number; inFlight?: Promise<void> }>()
   const NEWSLETTER_METADATA_SYNC_TTL_MS = config.newsletterMetadataSyncTtlMs
   const NEWSLETTER_METADATA_RETRY_TTL_MS = config.newsletterMetadataRetryTtlMs
+  const MAX_NEWSLETTER_METADATA_ENTRIES = 1_000
   const newsletterMediaRetryState = new Map<string, { attempts: number; nextAttemptAt: number; lastError?: string | null }>()
   const NEWSLETTER_MEDIA_RETRY_BASE_MS = config.newsletterMediaRetryBaseMs
   const NEWSLETTER_MEDIA_RETRY_MAX_ATTEMPTS = config.newsletterMediaRetryMaxAttempts
+  const MAX_NEWSLETTER_MEDIA_RETRY_ENTRIES = 5_000
+  const evictOldestIfNeeded = <K, V>(map: Map<K, V>, max: number): void => {
+    if (map.size > max) {
+      const oldest = map.keys().next().value
+      if (oldest !== undefined) map.delete(oldest)
+    }
+  }
   type EventContext = {
     actorJid?: string | null
     targetJid?: string | null
@@ -209,6 +217,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
       nextAttemptAt: now + NEWSLETTER_MEDIA_RETRY_BASE_MS * nextAttempt,
       lastError: retryState?.lastError ?? null,
     })
+    evictOldestIfNeeded(newsletterMediaRetryState, MAX_NEWSLETTER_MEDIA_RETRY_ENTRIES)
     try {
       const refreshed = await sock.updateMediaMessage(message)
       if (!refreshed || !refreshed.key || !hasMediaKey(refreshed)) return
@@ -227,6 +236,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
         nextAttemptAt: now + NEWSLETTER_MEDIA_RETRY_BASE_MS * (prev?.attempts ?? nextAttempt),
         lastError: messageError,
       })
+      evictOldestIfNeeded(newsletterMediaRetryState, MAX_NEWSLETTER_MEDIA_RETRY_ENTRIES)
       const isKnownError = isKnownNewsletterMediaRefreshError(error)
       if (isKnownError) {
         logger.debug('known failure updating newsletter media (ignored)', {
@@ -300,6 +310,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
       }
     })()
     newsletterMetadataSync.set(newsletterId, { nextAttemptAt: now + NEWSLETTER_METADATA_SYNC_TTL_MS, inFlight })
+    evictOldestIfNeeded(newsletterMetadataSync, MAX_NEWSLETTER_METADATA_ENTRIES)
     await inFlight
   }
   const recordNewsletterFromMessage = async (message: BaileysEventMap['messages.upsert']['messages'][number], upsertType: string) => {
