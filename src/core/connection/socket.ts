@@ -353,6 +353,10 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
 
     if (update.connection === 'close') {
       clearAntibanStateTimer()
+      if (credsSaveTimer) {
+        clearTimeout(credsSaveTimer)
+        credsSaveTimer = null
+      }
       void saveAntibanState('connection_close')
       const statusCode = (update.lastDisconnect?.error as Boom | undefined)?.output?.statusCode
       logger.warn('connection status: closed', { connectionId, statusCode })
