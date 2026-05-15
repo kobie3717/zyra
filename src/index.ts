@@ -132,6 +132,15 @@ const bootstrap = async (): Promise<void> => {
   await start()
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Promise Rejection:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+  process.exit(1)
+})
+
 bootstrap().catch((error) => {
   console.error('Failed to start bot:', error)
   process.exit(1)

@@ -1,14 +1,18 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const createSqlStoreMock = vi.fn()
 const handleIncomingMessagesMock = vi.fn()
 
-vi.mock('../src/config/index.js', () => ({
-  config: {
-    printQRInTerminal: false,
-  },
-}))
+const mockConfig = {
+  printQRInTerminal: false,
+  newsletterMetadataSyncTtlMs: 300_000,
+  newsletterMetadataRetryTtlMs: 30_000,
+  newsletterMediaRetryBaseMs: 0,
+  newsletterMediaRetryMaxAttempts: 5,
+}
+
+vi.mock('../src/config/index.js', () => ({ config: mockConfig }))
 
 vi.mock('../src/router/index.js', () => ({
   handleIncomingMessages: (...args: unknown[]) => handleIncomingMessagesMock(...args),
@@ -342,5 +346,58 @@ describe('registerEvents messages.upsert', () => {
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(handleIncomingMessagesMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerEvents newsletter media retry map cleanup', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    handleIncomingMessagesMock.mockResolvedValue(undefined)
+    mockConfig.newsletterMediaRetryMaxAttempts = 1
+    mockConfig.newsletterMediaRetryBaseMs = 0
+  })
+
+  afterEach(() => {
+    mockConfig.newsletterMediaRetryMaxAttempts = 5
+    mockConfig.newsletterMediaRetryBaseMs = 0
+  })
+
+  it('deletes retry entry on max retries so subsequent events can retry again', async () => {
+    const updateMediaMessage = vi.fn().mockRejectedValue(new Error('refresh failed'))
+
+    const { registerEvents } = await import('../src/events/register.ts')
+    const sock = {
+      ev: new EventEmitter(),
+      user: { id: 'bot@s.whatsapp.net' },
+      updateMediaMessage,
+    }
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    registerEvents({ sock: sock as never, logger: logger as never, reconnect: vi.fn(), connectionId: 'retry-test' })
+
+    const message = {
+      key: { remoteJid: '120363000000000001@newsletter', id: 'media-msg-leak', fromMe: false },
+      message: {
+        imageMessage: {
+          directPath: '/v/t62.7118-24/some/path',
+          url: 'https://mmg.whatsapp.net/some/path',
+        },
+      },
+    }
+
+    // emit 1: no entry → attempts=1 → calls updateMediaMessage (fails)
+    sock.ev.emit('messages.upsert', { type: 'notify', messages: [message] })
+    await new Promise((r) => setImmediate(r))
+    expect(updateMediaMessage).toHaveBeenCalledTimes(1)
+
+    // emit 2: attempts(1) >= max(1) → entry deleted → returns without calling updateMediaMessage
+    sock.ev.emit('messages.upsert', { type: 'notify', messages: [message] })
+    await new Promise((r) => setImmediate(r))
+    expect(updateMediaMessage).toHaveBeenCalledTimes(1)
+
+    // emit 3: entry was deleted → fresh start → calls updateMediaMessage again
+    sock.ev.emit('messages.upsert', { type: 'notify', messages: [message] })
+    await new Promise((r) => setImmediate(r))
+    expect(updateMediaMessage).toHaveBeenCalledTimes(2)
   })
 })
