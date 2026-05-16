@@ -12,6 +12,10 @@ type HealthState = {
   socketGeneration: number
   /** Current reconnect attempt counter, 0 when connected and stable. */
   reconnectAttempt: number
+  /** Epoch ms of the last messages.upsert event, null if none received yet. */
+  lastMessageReceivedAt: number | null
+  /** Mark connected socket as stale when no messages arrive within this window (ms). 0 = disabled. */
+  stalenessThresholdMs: number
 }
 
 type StartHealthServerOptions = {
@@ -37,9 +41,13 @@ const jsonResponse = (res: ServerResponse, statusCode: number, body: object) => 
   res.end(JSON.stringify(body))
 }
 
-const renderConnectionMetrics = ({ connected, socketGeneration, reconnectAttempt }: HealthState): string => {
+const renderConnectionMetrics = ({ connected, socketGeneration, reconnectAttempt, lastMessageReceivedAt, stalenessThresholdMs }: HealthState): string => {
   const uptime = Math.floor(process.uptime())
-  return [
+  const stale = connected
+    && stalenessThresholdMs > 0
+    && lastMessageReceivedAt !== null
+    && Date.now() - lastMessageReceivedAt > stalenessThresholdMs
+  const lines = [
     '# HELP zyra_connected WhatsApp connection state (1=connected, 0=disconnected)',
     '# TYPE zyra_connected gauge',
     `zyra_connected ${connected ? 1 : 0}`,
@@ -52,8 +60,19 @@ const renderConnectionMetrics = ({ connected, socketGeneration, reconnectAttempt
     '# HELP zyra_uptime_seconds Process uptime in seconds',
     '# TYPE zyra_uptime_seconds gauge',
     `zyra_uptime_seconds ${uptime}`,
-    '',
-  ].join('\n')
+    '# HELP zyra_connection_stale Whether connected socket is delivering no messages (1=stale)',
+    '# TYPE zyra_connection_stale gauge',
+    `zyra_connection_stale ${stale ? 1 : 0}`,
+  ]
+  if (lastMessageReceivedAt !== null) {
+    lines.push(
+      '# HELP zyra_last_message_received_seconds Seconds since last message was received',
+      '# TYPE zyra_last_message_received_seconds gauge',
+      `zyra_last_message_received_seconds ${((Date.now() - lastMessageReceivedAt) / 1000).toFixed(1)}`,
+    )
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
 export function startHealthServer({ logger, getState }: StartHealthServerOptions): HealthServerHandle {
@@ -67,21 +86,40 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
     const { connected, socketGeneration, reconnectAttempt } = state
 
     if (path === HEALTH_PATH) {
+      const { lastMessageReceivedAt, stalenessThresholdMs } = state
+      const stale = connected
+        && stalenessThresholdMs > 0
+        && lastMessageReceivedAt !== null
+        && Date.now() - lastMessageReceivedAt > stalenessThresholdMs
       jsonResponse(res, 200, {
         status: 'ok',
         connected,
         uptime: Math.floor(process.uptime()),
         socketGeneration,
         reconnectAttempt,
+        stale: stale || false,
+        ...(lastMessageReceivedAt !== null ? { lastMessageReceivedMs: Date.now() - lastMessageReceivedAt } : {}),
       })
       return
     }
 
     if (path === READY_PATH) {
-      if (connected) {
-        jsonResponse(res, 200, { status: 'ready', connected: true, socketGeneration, reconnectAttempt })
+      const { lastMessageReceivedAt, stalenessThresholdMs } = state
+      const stale = connected
+        && stalenessThresholdMs > 0
+        && lastMessageReceivedAt !== null
+        && Date.now() - lastMessageReceivedAt > stalenessThresholdMs
+      if (connected && !stale) {
+        jsonResponse(res, 200, { status: 'ready', connected: true, socketGeneration, reconnectAttempt, stale: false })
       } else {
-        jsonResponse(res, 503, { status: 'not ready', connected: false, socketGeneration, reconnectAttempt })
+        jsonResponse(res, 503, {
+          status: stale ? 'stale' : 'not ready',
+          connected,
+          socketGeneration,
+          reconnectAttempt,
+          stale: stale || false,
+          ...(stale && lastMessageReceivedAt !== null ? { lastMessageReceivedMs: Date.now() - lastMessageReceivedAt } : {}),
+        })
       }
       return
     }

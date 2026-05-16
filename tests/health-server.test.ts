@@ -34,7 +34,13 @@ describe('health-server', () => {
     vi.resetModules()
   })
 
-  const defaultState = () => ({ connected: true, socketGeneration: 1, reconnectAttempt: 0 })
+  const defaultState = () => ({
+    connected: true,
+    socketGeneration: 1,
+    reconnectAttempt: 0,
+    lastMessageReceivedAt: null as number | null,
+    stalenessThresholdMs: 0,
+  })
 
   it('GET /health returns 200 with status, connected, uptime and socket stats', async () => {
     const { startHealthServer } = await import('../src/observability/health-server.ts')
@@ -75,7 +81,7 @@ describe('health-server', () => {
     mockConfig.healthPort = 19113
     const { startHealthServer } = await import('../src/observability/health-server.ts')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
-    const getState = () => ({ connected: false, socketGeneration: 3, reconnectAttempt: 2 })
+    const getState = () => ({ connected: false, socketGeneration: 3, reconnectAttempt: 2, lastMessageReceivedAt: null, stalenessThresholdMs: 0 })
     const handle = startHealthServer({ logger: logger as never, getState })
 
     await wait(80)
@@ -91,7 +97,7 @@ describe('health-server', () => {
     mockConfig.healthPort = 19114
     const { startHealthServer } = await import('../src/observability/health-server.ts')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
-    let state = { connected: false, socketGeneration: 1, reconnectAttempt: 1 }
+    let state: Parameters<typeof startHealthServer>[0]['getState'] extends () => infer S ? S : never = { connected: false, socketGeneration: 1, reconnectAttempt: 1, lastMessageReceivedAt: null, stalenessThresholdMs: 0 }
     const handle = startHealthServer({ logger: logger as never, getState: () => state })
 
     await wait(80)
@@ -100,7 +106,7 @@ describe('health-server', () => {
     expect(before.connected).toBe(false)
     expect(before.reconnectAttempt).toBe(1)
 
-    state = { connected: true, socketGeneration: 2, reconnectAttempt: 0 }
+    state = { connected: true, socketGeneration: 2, reconnectAttempt: 0, lastMessageReceivedAt: null, stalenessThresholdMs: 0 }
     const after = JSON.parse((await httpGet(19114, '/health')).body)
     expect(after.connected).toBe(true)
     expect(after.socketGeneration).toBe(2)
@@ -115,7 +121,7 @@ describe('health-server', () => {
 
     const { startHealthServer } = await import('../src/observability/health-server.ts')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
-    const handle = startHealthServer({ logger: logger as never, getState: () => ({ connected: false, socketGeneration: 0, reconnectAttempt: 0 }) })
+    const handle = startHealthServer({ logger: logger as never, getState: () => ({ connected: false, socketGeneration: 0, reconnectAttempt: 0, lastMessageReceivedAt: null, stalenessThresholdMs: 0 }) })
 
     await wait(50)
 
@@ -145,7 +151,7 @@ describe('health-server', () => {
     mockConfig.healthPort = 19115
     const { startHealthServer } = await import('../src/observability/health-server.ts')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
-    const getState = () => ({ connected: true, socketGeneration: 2, reconnectAttempt: 0 })
+    const getState = () => ({ connected: true, socketGeneration: 2, reconnectAttempt: 0, lastMessageReceivedAt: null, stalenessThresholdMs: 0 })
     const handle = startHealthServer({ logger: logger as never, getState })
 
     await wait(80)
@@ -165,7 +171,7 @@ describe('health-server', () => {
     mockConfig.healthPort = 19116
     const { startHealthServer } = await import('../src/observability/health-server.ts')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
-    const getState = () => ({ connected: false, socketGeneration: 4, reconnectAttempt: 3 })
+    const getState = () => ({ connected: false, socketGeneration: 4, reconnectAttempt: 3, lastMessageReceivedAt: null, stalenessThresholdMs: 0 })
     const handle = startHealthServer({ logger: logger as never, getState })
 
     await wait(80)
@@ -200,5 +206,58 @@ describe('health-server', () => {
     ).resolves.toBeUndefined()
 
     agent.destroy()
+  })
+
+  it('GET /ready returns 503 stale when connected but no messages for threshold', async () => {
+    mockConfig.healthPort = 19118
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const staleAt = Date.now() - 31 * 60 * 1000 // 31 minutes ago
+    const getState = () => ({ connected: true, socketGeneration: 1, reconnectAttempt: 0, lastMessageReceivedAt: staleAt, stalenessThresholdMs: 30 * 60 * 1000 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19118, '/ready')
+    expect(res.status).toBe(503)
+    const body = JSON.parse(res.body)
+    expect(body.status).toBe('stale')
+    expect(body.stale).toBe(true)
+    expect(typeof body.lastMessageReceivedMs).toBe('number')
+
+    await handle.stop()
+  })
+
+  it('GET /ready returns 200 when connected and message received within threshold', async () => {
+    mockConfig.healthPort = 19119
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const getState = () => ({ connected: true, socketGeneration: 1, reconnectAttempt: 0, lastMessageReceivedAt: Date.now() - 5000, stalenessThresholdMs: 30 * 60 * 1000 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19119, '/ready')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body).stale).toBe(false)
+
+    await handle.stop()
+  })
+
+  it('GET /metrics includes zyra_connection_stale gauge', async () => {
+    mockConfig.healthPort = 19120
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const staleAt = Date.now() - 31 * 60 * 1000
+    const getState = () => ({ connected: true, socketGeneration: 1, reconnectAttempt: 0, lastMessageReceivedAt: staleAt, stalenessThresholdMs: 30 * 60 * 1000 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19120, '/metrics')
+    expect(res.body).toContain('zyra_connection_stale 1')
+    expect(res.body).toContain('zyra_last_message_received_seconds')
+
+    await handle.stop()
   })
 })

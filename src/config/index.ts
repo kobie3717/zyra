@@ -282,4 +282,16 @@ export const config = {
   get healthHost() {
     return process.env.WA_HEALTH_HOST ?? '127.0.0.1'
   },
+  /** RSS memory (MB) at which a warning is logged (WA_MEMORY_WARN_MB). 0 = disabled. */
+  get memoryWarnMb() {
+    return readNumber(process.env.WA_MEMORY_WARN_MB, 400)
+  },
+  /** RSS memory (MB) at which the process exits (WA_MEMORY_EXIT_MB). 0 = disabled. */
+  get memoryExitMb() {
+    return readNumber(process.env.WA_MEMORY_EXIT_MB, 800)
+  },
+  /** How long (ms) a connected socket may receive no messages before /ready returns 503 (WA_STALENESS_THRESHOLD_MS). 0 = disabled. */
+  get stalenessThresholdMs() {
+    return readNumber(process.env.WA_STALENESS_THRESHOLD_MS, 30 * 60 * 1000)
+  },
 }
