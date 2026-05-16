@@ -16,6 +16,19 @@ const createMemoryCacheStore = (ttlSeconds: number) => {
 
   const isExpired = (entry: MemoryEntry<unknown>) => entry.expiresAt !== null && Date.now() >= entry.expiresAt
 
+  // Proactively evict expired entries so write-heavy, read-sparse workloads don't leak.
+  let sweepTimer: NodeJS.Timeout | null = null
+  if (ttlMs > 0) {
+    const sweepInterval = Math.min(ttlMs, 5 * 60 * 1000)
+    sweepTimer = setInterval(() => {
+      const now = Date.now()
+      for (const [key, entry] of store) {
+        if (entry.expiresAt !== null && now >= entry.expiresAt) store.delete(key)
+      }
+    }, sweepInterval)
+    sweepTimer.unref()
+  }
+
   return {
     get: <T>(key: string): T | undefined => {
       const entry = store.get(key)
@@ -35,6 +48,7 @@ const createMemoryCacheStore = (ttlSeconds: number) => {
     },
     flushAll: () => {
       store.clear()
+      if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null }
     },
   }
 }
