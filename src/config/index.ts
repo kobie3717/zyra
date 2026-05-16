@@ -282,6 +282,30 @@ export const config = {
   get healthHost() {
     return process.env.WA_HEALTH_HOST ?? '127.0.0.1'
   },
+  /** Maximum pending messages per chat queue before backpressure kicks in (WA_ROUTER_MAX_PENDING_PER_QUEUE). */
+  get routerMaxPendingPerQueue() {
+    return readNumber(process.env.WA_ROUTER_MAX_PENDING_PER_QUEUE, 500)
+  },
+  /** Maximum wait in ms for graceful shutdown before forcing exit (WA_SHUTDOWN_TIMEOUT_MS). */
+  get shutdownTimeoutMs() {
+    return readNumber(process.env.WA_SHUTDOWN_TIMEOUT_MS, 10_000)
+  },
+  /** Debounce in ms to batch credential writes on creds.update (WA_CREDS_DEBOUNCE_MS). */
+  get credsDebounceMs() {
+    return readNumber(process.env.WA_CREDS_DEBOUNCE_MS, 1_500)
+  },
+  /** Base retry delay in ms for Redis reconnect backoff (WA_REDIS_CONNECT_RETRY_BASE_MS). */
+  get redisConnectRetryBaseMs() {
+    return readNumber(process.env.WA_REDIS_CONNECT_RETRY_BASE_MS, 500)
+  },
+  /** Maximum retry delay cap in ms for Redis reconnect backoff (WA_REDIS_CONNECT_RETRY_MAX_MS). */
+  get redisConnectRetryMaxMs() {
+    return readNumber(process.env.WA_REDIS_CONNECT_RETRY_MAX_MS, 10_000)
+  },
+  /** Maximum Redis reconnect attempts before giving up (WA_REDIS_CONNECT_MAX_ATTEMPTS). */
+  get redisConnectMaxAttempts() {
+    return readNumber(process.env.WA_REDIS_CONNECT_MAX_ATTEMPTS, 4)
+  },
   /** RSS memory (MB) at which a warning is logged (WA_MEMORY_WARN_MB). 0 = disabled. */
   get memoryWarnMb() {
     return readNumber(process.env.WA_MEMORY_WARN_MB, 400)

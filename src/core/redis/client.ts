@@ -1,9 +1,9 @@
 import { createClient } from 'redis'
 import { config } from '../../config/index.js'
 
-const REDIS_CONNECT_RETRY_BASE_MS = Math.max(100, Number(process.env.WA_REDIS_CONNECT_RETRY_BASE_MS ?? 500))
-const REDIS_CONNECT_RETRY_MAX_MS = Math.max(REDIS_CONNECT_RETRY_BASE_MS, Number(process.env.WA_REDIS_CONNECT_RETRY_MAX_MS ?? 10_000))
-const REDIS_CONNECT_MAX_ATTEMPTS = Math.max(1, Number(process.env.WA_REDIS_CONNECT_MAX_ATTEMPTS ?? 4))
+const REDIS_CONNECT_RETRY_BASE_MS = Math.max(100, config.redisConnectRetryBaseMs)
+const REDIS_CONNECT_RETRY_MAX_MS = Math.max(REDIS_CONNECT_RETRY_BASE_MS, config.redisConnectRetryMaxMs)
+const REDIS_CONNECT_MAX_ATTEMPTS = Math.max(1, config.redisConnectMaxAttempts)
 
 type AppRedisClient = ReturnType<typeof createClient>
 

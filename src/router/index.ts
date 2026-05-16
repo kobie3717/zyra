@@ -2,12 +2,13 @@ import { type WASocket, type proto } from 'baileys'
 import type { AppLogger } from '../observability/logger.js'
 import type { SqlStore } from '../store/sql-store.js'
 import { createCommandProcessor } from '../core/command-runtime/processor.js'
+import { config } from '../config/index.js'
 
 const chatQueues = new Map<string, Promise<void>>()
 const queueSizes = new Map<string, number>()
-const MAX_PENDING_PER_QUEUE = Math.max(1, Number(process.env.WA_ROUTER_MAX_PENDING_PER_QUEUE ?? 500))
+const MAX_PENDING_PER_QUEUE = Math.max(1, config.routerMaxPendingPerQueue)
 /** 0 = no timeout */
-const COMMAND_TIMEOUT_MS = Math.max(0, Number(process.env.WA_COMMAND_TIMEOUT_MS ?? 60_000))
+const COMMAND_TIMEOUT_MS = Math.max(0, config.commandTimeoutMs)
 
 /** Cached per-connection processor — preserves antilink and rate-limit state across message batches. */
 const processorCache = new Map<string, ReturnType<typeof createCommandProcessor>>()
