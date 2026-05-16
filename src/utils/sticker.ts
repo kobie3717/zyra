@@ -173,7 +173,7 @@ const MAX_EXIF_STRING_LENGTH = 128
 
 function sanitizeExifString(value: string): string {
   // Cap length and strip control characters to prevent oversized EXIF buffers.
-  return value.slice(0, MAX_EXIF_STRING_LENGTH).replace(/[\x00-\x1F\x7F]/g, '')
+  return value.slice(0, MAX_EXIF_STRING_LENGTH).replace(/\p{Cc}/gu, '')
 }
 
 function createExifBuffer(packName: string, packAuthor: string): Buffer {
