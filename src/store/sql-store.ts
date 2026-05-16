@@ -1186,7 +1186,7 @@ export function createSqlStore(connectionId?: string): SqlStore {
               [resolvedConnectionId, normalizedId, subject, ownerUserId ? 1 : 0, ownerUserId, toTinyInt(group.announce), toTinyInt(group.restrict), typeof group.size === 'number' ? group.size : null, payload]
             )
           } catch (error) {
-            console.error('[sql-store] falha ao salvar groups', {
+            getStoreLogger().error('[sql-store] failed to save group', {
               id,
               subjectLen: group.subject ? group.subject.length : 0,
               err: error,

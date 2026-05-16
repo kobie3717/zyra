@@ -1,8 +1,15 @@
 import { DEFAULT_CACHE_TTLS, type BaileysEventEmitter, type CacheStore, type Chat, type ChatUpdate, type Contact, type GroupMetadata, type GroupParticipant, type LIDMapping, type PossiblyExtendedCacheStore, type WAMessage, type WAMessageKey } from 'baileys'
 import { config } from '../config/index.js'
+import { createLogger } from '../observability/logger.js'
 import { createCacheStore, createExtendedCacheStore } from './cache-store.js'
 import { createRedisStore } from './redis-store.js'
 import { createSqlStore } from './sql-store.js'
+
+let storeLoggerRef: ReturnType<typeof createLogger> | null = null
+const getStoreLogger = () => {
+  if (!storeLoggerRef) storeLoggerRef = createLogger()
+  return storeLoggerRef
+}
 
 type MessageContent = Exclude<WAMessage['message'], null | undefined>
 
@@ -307,7 +314,7 @@ export function createBaileysStore(connectionId?: string): BaileysStore {
         }
         if (sqlStore.enabled) {
           void sqlStore.setGroup(groupId, normalizedGroup).catch((error) => {
-            console.error('[groups.upsert] falha ao salvar grupo no SQL', error)
+            getStoreLogger().error('[groups.upsert] failed to save group to SQL', { err: error })
           })
           if (normalizedGroup.participants?.length) {
             const normalizedParticipants = normalizedGroup.participants
