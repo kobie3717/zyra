@@ -244,6 +244,23 @@ describe('health-server', () => {
     await handle.stop()
   })
 
+  it('GET /ready returns 200 when stalenessThresholdMs=0 even if no recent messages', async () => {
+    mockConfig.healthPort = 19121
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const oldAt = Date.now() - 999_999_999
+    const getState = () => ({ connected: true, socketGeneration: 1, reconnectAttempt: 0, lastMessageReceivedAt: oldAt, stalenessThresholdMs: 0 })
+    const handle = startHealthServer({ logger: logger as never, getState })
+
+    await wait(80)
+
+    const res = await httpGet(19121, '/ready')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body).stale).toBe(false)
+
+    await handle.stop()
+  })
+
   it('GET /metrics includes zyra_connection_stale gauge', async () => {
     mockConfig.healthPort = 19120
     const { startHealthServer } = await import('../src/observability/health-server.ts')
