@@ -1,5 +1,6 @@
 import { useMultiFileAuthState, type AuthenticationState } from 'baileys'
 import { config } from '../../config/index.js'
+import type { AppLogger } from '../../observability/logger.js'
 import { resolveAuthDir } from './auth-dir.js'
 import { useMysqlAuthState } from './mysql-auth-state.js'
 import { useRedisAuthState } from './redis-auth-state.js'
@@ -39,15 +40,15 @@ type AuthStateProvider =
  * sock.ev.on('creds.update', saveCreds);
  * ```
  */
-export async function getAuthState(connectionId?: string): Promise<AuthStateProvider> {
+export async function getAuthState(connectionId?: string, logger?: AppLogger): Promise<AuthStateProvider> {
   // 1st Priority: MySQL (ACID and centralized persistence)
   if (config.mysqlUrl) {
-    return useMysqlAuthState(connectionId)
+    return useMysqlAuthState(connectionId, logger)
   }
 
   // 2nd Priority: Redis (In-memory persistence with fast cache)
   if (config.redisUrl) {
-    return useRedisAuthState(connectionId)
+    return useRedisAuthState(connectionId, logger)
   }
 
   // 3rd Priority/Fallback: Local File System (JSON)

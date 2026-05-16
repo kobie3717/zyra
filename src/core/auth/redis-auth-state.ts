@@ -1,5 +1,6 @@
 import { type AuthenticationCreds, type AuthenticationState, type SignalDataSet, type SignalDataTypeMap, type SignalKeyStore } from 'baileys'
 import { config } from '../../config/index.js'
+import type { AppLogger } from '../../observability/logger.js'
 import { getRedisClient } from '../redis/client.js'
 import { getLegacyRedisNamespace, getRedisNamespace } from '../redis/prefix.js'
 import { resolveAuthDir } from './auth-dir.js'
@@ -63,7 +64,7 @@ const buildRedisKeys = (connectionId?: string) => {
  * socket.ev.on('creds.update', saveCreds);
  * ```
  */
-export async function useRedisAuthState(connectionId?: string): Promise<RedisAuthState> {
+export async function useRedisAuthState(connectionId?: string, logger?: AppLogger): Promise<RedisAuthState> {
   const authDir = resolveAuthDir(connectionId)
   await ensureAuthFolder(authDir)
   const client = await getRedisClient()
@@ -76,7 +77,11 @@ export async function useRedisAuthState(connectionId?: string): Promise<RedisAut
     if (!redisFailureLogged) {
       redisFailureLogged = true
       redisRecoveryLogged = false
-      console.warn('[auth] falha ao acessar redis, usando disco como fallback', { error })
+      if (logger) {
+        logger.warn('[auth] redis unavailable, falling back to disk', { err: error })
+      } else {
+        console.warn('[auth] falha ao acessar redis, usando disco como fallback', { error })
+      }
     }
   }
 
@@ -84,7 +89,11 @@ export async function useRedisAuthState(connectionId?: string): Promise<RedisAut
     if (!redisFailureLogged || redisRecoveryLogged) return
     redisRecoveryLogged = true
     redisFailureLogged = false
-    console.info('[auth] redis recuperado, reativando cache')
+    if (logger) {
+      logger.info('[auth] redis recovered, re-enabling cache')
+    } else {
+      console.info('[auth] redis recuperado, reativando cache')
+    }
   }
 
   const withRedis = async <T>(fn: (redisClient: typeof client) => Promise<T>, fallback: T): Promise<T> => {
@@ -116,10 +125,17 @@ export async function useRedisAuthState(connectionId?: string): Promise<RedisAut
   const creds = selection.creds
 
   if (selection.meta.missingCritical.length) {
-    console.warn('[auth] credenciais incompletas detectadas', {
-      source: selection.meta.source,
-      missing: selection.meta.missingCritical,
-    })
+    if (logger) {
+      logger.warn('[auth] incomplete credentials detected', {
+        source: selection.meta.source,
+        missing: selection.meta.missingCritical,
+      })
+    } else {
+      console.warn('[auth] credenciais incompletas detectadas', {
+        source: selection.meta.source,
+        missing: selection.meta.missingCritical,
+      })
+    }
   }
 
   // --- Sincronização Inicial ---

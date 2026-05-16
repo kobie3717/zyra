@@ -1,6 +1,7 @@
 import { type AuthenticationCreds, type AuthenticationState, type SignalDataSet, type SignalDataTypeMap, type SignalKeyStore } from 'baileys'
 import type { RowDataPacket } from 'mysql2/promise'
 import { config } from '../../config/index.js'
+import type { AppLogger } from '../../observability/logger.js'
 import { ensureMysqlConnection } from '../db/connection.js'
 import { getMysqlPool } from '../db/mysql.js'
 import { getRedisClient } from '../redis/client.js'
@@ -92,7 +93,7 @@ const buildRedisKeys = (connectionId?: string) => {
  * * @param connectionId - Identificador único para isolamento de dados da sessão.
  * @returns Promessa com estado de autenticação compatível com `makeWASocket`.
  */
-export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAuthState> {
+export async function useMysqlAuthState(connectionId?: string, logger?: AppLogger): Promise<MysqlAuthState> {
   const pool = getMysqlPool()
   let mysqlHealthy = Boolean(pool)
   let mysqlFailureLogged = false
@@ -103,7 +104,11 @@ export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAut
 
   if (!pool && !mysqlUnavailableLogged) {
     mysqlUnavailableLogged = true
-    console.warn('[auth] mysql indisponivel, usando redis/disco como fallback')
+    if (logger) {
+      logger.warn('[auth] mysql unavailable, falling back to redis/disk')
+    } else {
+      console.warn('[auth] mysql indisponivel, usando redis/disco como fallback')
+    }
   }
 
   const resolvedConnectionId = connectionId ?? config.connectionId ?? 'default'
@@ -116,7 +121,11 @@ export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAut
   const markRedisUnavailable = (error: unknown) => {
     if (redisFailureLogged) return
     redisFailureLogged = true
-    console.warn('[auth] falha ao acessar redis, seguindo com mysql/disco', { error })
+    if (logger) {
+      logger.warn('[auth] redis unavailable, continuing with mysql/disk', { err: error })
+    } else {
+      console.warn('[auth] falha ao acessar redis, seguindo com mysql/disco', { error })
+    }
   }
 
   const withRedis = async <T>(fn: (client: NonNullable<typeof redisClient>) => Promise<T>, fallback: T): Promise<T> => {
@@ -125,7 +134,11 @@ export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAut
       const result = await fn(redisClient)
       if (redisFailureLogged) {
         redisFailureLogged = false
-        console.info('[auth] redis recuperado, reativando cache')
+        if (logger) {
+          logger.info('[auth] redis recovered, re-enabling cache')
+        } else {
+          console.info('[auth] redis recuperado, reativando cache')
+        }
       }
       return result
     } catch (error) {
@@ -140,7 +153,11 @@ export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAut
     if (!mysqlFailureLogged) {
       mysqlFailureLogged = true
       mysqlRecoveryLogged = false
-      console.warn('[auth] falha crítica ao acessar mysql, fallback ativado', { error })
+      if (logger) {
+        logger.warn('[auth] mysql critical failure, fallback activated', { err: error })
+      } else {
+        console.warn('[auth] falha crítica ao acessar mysql, fallback ativado', { error })
+      }
     }
   }
 
@@ -151,7 +168,11 @@ export async function useMysqlAuthState(connectionId?: string): Promise<MysqlAut
     if (!mysqlRecoveryLogged) {
       mysqlRecoveryLogged = true
       mysqlFailureLogged = false
-      console.info('[auth] mysql recuperado, reativando persistencia')
+      if (logger) {
+        logger.info('[auth] mysql recovered, re-enabling persistence')
+      } else {
+        console.info('[auth] mysql recuperado, reativando persistencia')
+      }
     }
   }
 
