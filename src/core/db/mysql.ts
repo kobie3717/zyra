@@ -16,7 +16,9 @@ export function getMysqlPool(): Pool | null {
     })
     // Without a listener, pool-level errors (e.g. PROTOCOL_CONNECTION_LOST on idle
     // connections) would be re-thrown as an uncaught exception and crash the process.
-    pool.on('error', (err) => {
+    // Cast through EventEmitter: mysql2 Pool types only expose 'enqueue' in their
+    // overloads but the underlying object is a full EventEmitter.
+    ;(pool as unknown as import('node:events').EventEmitter).on('error', (err) => {
       console.error('[mysql] pool error', err)
     })
   }
