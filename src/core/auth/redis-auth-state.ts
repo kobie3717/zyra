@@ -17,7 +17,7 @@ type RedisAuthState = {
   saveCreds: () => Promise<void>
 }
 
-const DISK_READ_CONCURRENCY = Math.max(1, Number(process.env.WA_AUTH_DISK_CONCURRENCY ?? 50))
+const DISK_READ_CONCURRENCY = Math.max(1, config.authDiskConcurrency)
 
 const runWithConcurrency = async <T>(items: T[], concurrency: number, handler: (item: T) => Promise<void>) => {
   let index = 0

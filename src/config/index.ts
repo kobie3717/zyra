@@ -306,6 +306,22 @@ export const config = {
   get redisConnectMaxAttempts() {
     return readNumber(process.env.WA_REDIS_CONNECT_MAX_ATTEMPTS, 4)
   },
+  /** Batch size for INSERT/DELETE operations on signal_keys table (WA_SIGNAL_KEYS_CHUNK). */
+  get mysqlSignalKeysChunk() {
+    return readNumber(process.env.WA_SIGNAL_KEYS_CHUNK, 500)
+  },
+  /** Maximum concurrent disk I/O operations for auth state reads/writes (WA_AUTH_DISK_CONCURRENCY). */
+  get authDiskConcurrency() {
+    return readNumber(process.env.WA_AUTH_DISK_CONCURRENCY, 50)
+  },
+  /** Timeout in ms for individual delete-session operations (WA_DELETE_SESSION_TIMEOUT_MS). */
+  get deleteSessionTimeoutMs() {
+    return readNumber(process.env.WA_DELETE_SESSION_TIMEOUT_MS, 15_000)
+  },
+  /** Maximum time in ms for Redis SCAN operations during delete-session (WA_DELETE_SESSION_REDIS_MAX_MS). */
+  get deleteSessionRedisScanMaxMs() {
+    return readNumber(process.env.WA_DELETE_SESSION_REDIS_MAX_MS, 60_000)
+  },
   /** RSS memory (MB) at which a warning is logged (WA_MEMORY_WARN_MB). 0 = disabled. */
   get memoryWarnMb() {
     return readNumber(process.env.WA_MEMORY_WARN_MB, 400)

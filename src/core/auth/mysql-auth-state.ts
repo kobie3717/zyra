@@ -39,8 +39,8 @@ type MysqlAuthState = {
 
 let mysqlUnavailableLogged = false
 
-const MYSQL_SIGNAL_KEYS_CHUNK_SIZE = Math.max(1, Number(process.env.WA_SIGNAL_KEYS_CHUNK ?? 500))
-const DISK_READ_CONCURRENCY = Math.max(1, Number(process.env.WA_AUTH_DISK_CONCURRENCY ?? 50))
+const MYSQL_SIGNAL_KEYS_CHUNK_SIZE = Math.max(1, config.mysqlSignalKeysChunk)
+const DISK_READ_CONCURRENCY = Math.max(1, config.authDiskConcurrency)
 
 const chunkArray = <T>(items: T[], size: number): T[][] => {
   const chunks: T[][] = []
