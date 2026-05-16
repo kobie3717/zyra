@@ -14,6 +14,11 @@ export function getMysqlPool(): Pool | null {
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
     })
+    // Without a listener, pool-level errors (e.g. PROTOCOL_CONNECTION_LOST on idle
+    // connections) would be re-thrown as an uncaught exception and crash the process.
+    pool.on('error', (err) => {
+      console.error('[mysql] pool error', err)
+    })
   }
   return pool
 }
