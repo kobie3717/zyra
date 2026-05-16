@@ -28,6 +28,7 @@ const getStoreLogger = () => {
 
 const LID_PN_CONFLICT_WINDOW_MS = 10 * 60 * 1000
 const LID_PN_REISOLATE_COOLDOWN_MS = 30 * 60 * 1000
+const MAX_LID_PN_TRACKING_ENTRIES = 10_000
 const lidPnPairLocks = new Map<string, Promise<void>>()
 const recentLidPnConflicts = new Map<string, { count: number; firstSeenAt: number; lastSeenAt: number }>()
 const recentLidPnIsolations = new Map<string, number>()
@@ -60,6 +61,10 @@ const trackLidPnConflict = (pairKey: string): { firstInWindow: boolean; count: n
       firstSeenAt: now,
       lastSeenAt: now,
     })
+    if (recentLidPnConflicts.size > MAX_LID_PN_TRACKING_ENTRIES) {
+      const oldest = recentLidPnConflicts.keys().next().value
+      if (oldest !== undefined) recentLidPnConflicts.delete(oldest)
+    }
     return { firstInWindow: true, count: 1, windowStartedAt: now }
   }
 
@@ -74,6 +79,10 @@ const shouldApplyLidPnIsolation = (pairKey: string): boolean => {
   const lastIsolationAt = recentLidPnIsolations.get(pairKey)
   if (!lastIsolationAt || now - lastIsolationAt > LID_PN_REISOLATE_COOLDOWN_MS) {
     recentLidPnIsolations.set(pairKey, now)
+    if (recentLidPnIsolations.size > MAX_LID_PN_TRACKING_ENTRIES) {
+      const oldest = recentLidPnIsolations.keys().next().value
+      if (oldest !== undefined) recentLidPnIsolations.delete(oldest)
+    }
     return true
   }
   return false
