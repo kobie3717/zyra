@@ -53,7 +53,7 @@ describe('auth-state factory', () => {
     const result = await getAuthState('conn')
 
     expect(useMysqlAuthState).toHaveBeenCalledTimes(1)
-    expect(useMysqlAuthState).toHaveBeenCalledWith('conn')
+    expect(useMysqlAuthState).toHaveBeenCalledWith('conn', undefined)
     expect(useRedisAuthState).not.toHaveBeenCalled()
     expect(useMultiFileAuthState).not.toHaveBeenCalled()
     expect((result as never as { state: { creds: { from: string } } }).state.creds.from).toBe('mysql')
@@ -68,7 +68,7 @@ describe('auth-state factory', () => {
 
     expect(useMysqlAuthState).not.toHaveBeenCalled()
     expect(useRedisAuthState).toHaveBeenCalledTimes(1)
-    expect(useRedisAuthState).toHaveBeenCalledWith('conn')
+    expect(useRedisAuthState).toHaveBeenCalledWith('conn', undefined)
     expect(useMultiFileAuthState).not.toHaveBeenCalled()
     expect((result as never as { state: { creds: { from: string } } }).state.creds.from).toBe('redis')
   })

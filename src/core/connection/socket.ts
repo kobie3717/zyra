@@ -95,7 +95,7 @@ async function resolveBaileysVersion(logger: AppLogger): Promise<SocketVersion> 
  */
 async function resolveAuthState(connectionId: string, logger: AppLogger) {
   try {
-    return await getAuthState(connectionId)
+    return await getAuthState(connectionId, logger)
   } catch (error) {
     logger.error('failed to resolve auth state, activating local fallback', {
       err: error,
@@ -276,6 +276,12 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
     antibanStateTimer = null
   }
 
+  const clearCredsTimer = () => {
+    if (!credsSaveTimer) return
+    clearTimeout(credsSaveTimer)
+    credsSaveTimer = null
+  }
+
   const startAntibanStateTimer = () => {
     if (!config.antibanEnabled || config.antibanStateSaveIntervalMs <= 0) return
     if (antibanStateTimer) return
@@ -400,7 +406,7 @@ export async function createSocket(connectionId: string, logger: AppLogger) {
     store,
     saveCreds,
     saveAntiBanState: config.antibanEnabled ? saveAntibanState : undefined,
-    cleanup: clearAntibanStateTimer,
+    cleanup: () => { clearAntibanStateTimer(); clearCredsTimer() },
     logger,
     connectionId,
   })
