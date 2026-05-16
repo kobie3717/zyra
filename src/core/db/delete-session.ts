@@ -10,8 +10,8 @@ import { getMysqlPool } from './mysql.js'
 
 loadEnv()
 const logger = createLogger()
-const DEFAULT_TIMEOUT_MS = Number(process.env.WA_DELETE_SESSION_TIMEOUT_MS ?? 15000)
-const REDIS_SCAN_MAX_MS = Number(process.env.WA_DELETE_SESSION_REDIS_MAX_MS ?? 60000)
+const DEFAULT_TIMEOUT_MS = config.deleteSessionTimeoutMs
+const REDIS_SCAN_MAX_MS = config.deleteSessionRedisScanMaxMs
 
 const withTimeout = async <T>(label: string, promise: Promise<T>, timeoutMs = DEFAULT_TIMEOUT_MS) => {
   let timeoutId: NodeJS.Timeout | null = null
