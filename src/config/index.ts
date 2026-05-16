@@ -192,9 +192,9 @@ export const config = {
   get antibanMetricsEnabled() {
     return readBoolean(process.env.WA_ANTIBAN_METRICS_ENABLED, false)
   },
-  /** Bind host for metrics server. */
+  /** Bind host for metrics server (WA_ANTIBAN_METRICS_HOST). Defaults to loopback to prevent internet exposure. */
   get antibanMetricsHost() {
-    return process.env.WA_ANTIBAN_METRICS_HOST ?? '0.0.0.0'
+    return process.env.WA_ANTIBAN_METRICS_HOST ?? '127.0.0.1'
   },
   /** Port for metrics server. */
   get antibanMetricsPort() {
@@ -278,8 +278,8 @@ export const config = {
   get healthPort() {
     return readNumber(process.env.WA_HEALTH_PORT, 9109)
   },
-  /** Bind host for health check server (WA_HEALTH_HOST). */
+  /** Bind host for health check server (WA_HEALTH_HOST). Defaults to loopback to prevent internet exposure. */
   get healthHost() {
-    return process.env.WA_HEALTH_HOST ?? '0.0.0.0'
+    return process.env.WA_HEALTH_HOST ?? '127.0.0.1'
   },
 }

@@ -6,7 +6,10 @@ import mysql from 'mysql2/promise'
 import { describe, expect, it } from 'vitest'
 
 const queriesDir = path.resolve(process.cwd(), 'tests/queries')
-const mysqlUrl = process.env.MYSQL_URL ?? process.env.WA_DB_URL
+const rawDbUrl = process.env.MYSQL_URL ?? process.env.WA_DB_URL
+// Only run live-execution tests against a real MySQL/MariaDB URL to avoid
+// hanging on non-MySQL databases set in WA_DB_URL by other projects.
+const mysqlUrl = rawDbUrl && /^(mysql|mariadb):/.test(rawDbUrl) ? rawDbUrl : undefined
 const FORBIDDEN_STATEMENT_PATTERN = /\b(?:INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE)\b/i
 const READ_ONLY_STATEMENT_PATTERN = /^(?:SELECT|WITH)\b/i
 
