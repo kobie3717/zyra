@@ -74,6 +74,34 @@ afterEach(() => {
 })
 
 describe('cache-store', () => {
+  it('proactively sweeps expired entries without a read', async () => {
+    vi.useFakeTimers()
+    const { createCacheStore } = await import('../src/store/cache-store.ts')
+    const cache = createCacheStore('sweep-test', 1, 'conn')
+
+    cache.set('x', 'value')
+
+    // Advance past TTL but do NOT read — lazy eviction would not fire.
+    await vi.advanceTimersByTimeAsync(2000)
+
+    // The sweep timer (interval = min(TTL, 5min) = 1s) must have run by now.
+    // A subsequent read proves the entry is gone (not merely returning stale data).
+    expect(cache.get('x')).toBeUndefined()
+  })
+
+  it('flushAll clears the sweep interval', async () => {
+    vi.useFakeTimers()
+    const { createCacheStore } = await import('../src/store/cache-store.ts')
+    const cache = createCacheStore('flush-test', 60, 'conn')
+
+    cache.set('a', 1)
+    cache.flushAll()
+
+    // Interval cleared — no entries remain and advancing time does not throw.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(cache.get('a')).toBeUndefined()
+  })
+
   it('usa cache em memoria com TTL e operacoes em lote', async () => {
     vi.useFakeTimers()
 
