@@ -464,6 +464,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
             newLoginRestartTimer = null
             void sock.end(new Error('Restart after new login'))
           }, 1500)
+          newLoginRestartTimer.unref()
         }
         void (async () => {
           if (sqlStore.enabled) {
@@ -888,10 +889,14 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
   for (const event of ALL_EVENTS) {
     sock.ev.on(event, async (data) => {
       const handler = handlers[event] as EventHandler<typeof event> | undefined
-      if (handler) {
-        await handler(data as never)
-      } else {
-        logEvent(event, {})
+      try {
+        if (handler) {
+          await handler(data as never)
+        } else {
+          logEvent(event, {})
+        }
+      } catch (err) {
+        logger.error('unhandled error in event handler', { event, err })
       }
     })
   }

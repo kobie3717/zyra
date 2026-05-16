@@ -41,9 +41,9 @@ type SocketVersion = typeof DEFAULT_CONNECTION_CONFIG.version
 
 const VERSION_CACHE_TTL_MS = config.versionCacheTtlMs
 /** Maximum timeout for graceful shutdown before forcing exit in milliseconds */
-const SHUTDOWN_TIMEOUT_MS = Math.max(0, Number(process.env.WA_SHUTDOWN_TIMEOUT_MS ?? 10_000))
+const SHUTDOWN_TIMEOUT_MS = Math.max(0, config.shutdownTimeoutMs)
 /** Debounce to avoid storm of writes on creds.update in milliseconds */
-const CREDS_DEBOUNCE_MS = Math.max(0, Number(process.env.WA_CREDS_DEBOUNCE_MS ?? 1_500))
+const CREDS_DEBOUNCE_MS = Math.max(0, config.credsDebounceMs)
 /** Error code associated with reach-out timelock/account restriction on sends/calls */
 const REACHOUT_TIMELOCK_STATUS_CODE = 463
 

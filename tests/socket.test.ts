@@ -21,6 +21,18 @@ const mockConfig = {
   antibanEnabled: false,
   antibanStateSaveIntervalMs: 300000,
   versionCacheTtlMs: 24 * 60 * 60 * 1000,
+  get credsDebounceMs() {
+    const v = process.env.WA_CREDS_DEBOUNCE_MS
+    if (v === undefined) return 1_500
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 1_500
+  },
+  get shutdownTimeoutMs() {
+    const v = process.env.WA_SHUTDOWN_TIMEOUT_MS
+    if (v === undefined) return 10_000
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 10_000
+  },
 }
 
 vi.mock('baileys', async () => {
