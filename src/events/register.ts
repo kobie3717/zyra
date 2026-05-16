@@ -95,6 +95,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
   const socketWithNewsletterMetadata = sock as SocketWithNewsletterMetadata
   const sqlStore = createSqlStore(connectionId)
   let restartedAfterNewLogin = false
+  let newLoginRestartTimer: NodeJS.Timeout | null = null
   const newsletterMetadataSync = new Map<string, { nextAttemptAt: number; inFlight?: Promise<void> }>()
   const NEWSLETTER_METADATA_SYNC_TTL_MS = config.newsletterMetadataSyncTtlMs
   const NEWSLETTER_METADATA_RETRY_TTL_MS = config.newsletterMetadataRetryTtlMs
@@ -422,6 +423,10 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
 
       if (connection === 'close') {
         onDisconnected?.()
+        if (newLoginRestartTimer) {
+          clearTimeout(newLoginRestartTimer)
+          newLoginRestartTimer = null
+        }
         const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut
         const restartRequired = statusCode === DisconnectReason.restartRequired
@@ -453,7 +458,8 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
         if (isNewLogin && !restartedAfterNewLogin) {
           restartedAfterNewLogin = true
           logger.warn('new login detected, restarting connection to stabilize')
-          setTimeout(() => {
+          newLoginRestartTimer = setTimeout(() => {
+            newLoginRestartTimer = null
             void sock.end(new Error('Restart after new login'))
           }, 1500)
         }
