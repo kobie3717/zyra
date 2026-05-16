@@ -109,6 +109,8 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
   return {
     stop: () =>
       new Promise<void>((resolve, reject) => {
+        // Destroy keep-alive connections so server.close() callback fires promptly.
+        server.closeAllConnections()
         server.close((err) => (err ? reject(err) : resolve()))
       }),
   }
