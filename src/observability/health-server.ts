@@ -38,6 +38,9 @@ const notFound = (res: ServerResponse) => {
 const jsonResponse = (res: ServerResponse, statusCode: number, body: object) => {
   res.statusCode = statusCode
   res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('x-content-type-options', 'nosniff')
+  res.setHeader('x-frame-options', 'DENY')
+  res.setHeader('cache-control', 'no-store')
   res.end(JSON.stringify(body))
 }
 
@@ -127,6 +130,9 @@ export function startHealthServer({ logger, getState }: StartHealthServerOptions
     if (path === METRICS_PATH) {
       res.statusCode = 200
       res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8')
+      res.setHeader('x-content-type-options', 'nosniff')
+      res.setHeader('x-frame-options', 'DENY')
+      res.setHeader('cache-control', 'no-store')
       res.end(renderConnectionMetrics(state))
       return
     }

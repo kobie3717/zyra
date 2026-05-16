@@ -15,7 +15,7 @@ const MEDIA_STREAM_TYPE: Record<MediaMessageType, StreamType> = {
   ptvMessage: 'video',
 }
 
-const safeName = (value: string) => value.replace(/[^a-zA-Z0-9._-]/g, '_')
+const safeName = (value: string) => value.replace(/[/\\]/g, '').replace(/\.\./g, '').replace(/[^a-zA-Z0-9._-]/g, '_')
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 const pruneInFlightByDir = new Map<string, Promise<void>>()
 
@@ -154,6 +154,14 @@ export async function downloadIncomingMediaToDisk(params: {
     mimeType: params.mimeType,
   })
   const absolutePath = path.join(baseDir, `${params.messageDbId}-${name}`)
+
+  // Guard against path traversal
+  const resolvedBase = path.resolve(baseDir)
+  const resolvedPath = path.resolve(absolutePath)
+  if (!resolvedPath.startsWith(resolvedBase + path.sep) && resolvedPath !== resolvedBase) {
+    throw new Error('path traversal attempt detected')
+  }
+
   await fs.writeFile(absolutePath, buffer)
   await pruneMediaStorage(baseDir)
   return toRelativePath(absolutePath)

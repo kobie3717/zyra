@@ -37,8 +37,25 @@ async function main() {
      ORDER BY table_name`
   )
 
+  // Whitelist of allowed tables to prevent SQL injection via dynamic table names
+  const ALLOWED_TABLES = new Set([
+    'auth_creds', 'blocklist', 'bot_sessions', 'chat_users', 'chats',
+    'commands_log', 'connections', 'events_log', 'events_log_archive',
+    'group_events', 'group_join_requests', 'group_participants', 'groups',
+    'label_associations', 'labels', 'lid_mappings', 'message_events',
+    'message_failures', 'message_media', 'message_text_index', 'message_users',
+    'messages', 'newsletter_events', 'newsletter_participants', 'newsletters',
+    'signal_keys', 'user_aliases', 'user_devices', 'user_generated_stickers',
+    'user_identifiers', 'user_sticker_templates', 'users', 'wa_contacts_cache',
+    'group_config', 'backfill_checkpoint'
+  ])
+
   for (const row of tableRows) {
     const table = row.table_name
+    if (!ALLOWED_TABLES.has(table)) {
+      logger.warn(`skipping table not in whitelist: ${table}`)
+      continue
+    }
     try {
       const [columns] = await pool.execute<ColumnRow[]>(
         `SELECT COUNT(*) AS count

@@ -52,7 +52,7 @@ ENV NODE_ENV=production \
     WA_PRINT_QR=true \
     WA_ANTIBAN_ENABLED=true \
     WA_ANTIBAN_METRICS_ENABLED=true \
-    WA_ANTIBAN_METRICS_HOST=0.0.0.0 \
+    WA_ANTIBAN_METRICS_HOST=127.0.0.1 \
     WA_ANTIBAN_METRICS_PORT=9108
 
 CMD ["node", "dist/index.js"]
