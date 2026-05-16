@@ -23,6 +23,8 @@ type RegisterOptions = {
   onConnected?: () => void
   /** Called when connection reaches the 'close' state — used to update readiness state. */
   onDisconnected?: () => void
+  /** Called each time a messages.upsert event arrives — used to track connection staleness. */
+  onMessageReceived?: () => void
 }
 
 /**
@@ -90,7 +92,7 @@ type EventHandler<K extends keyof BaileysEventMap> = (data: BaileysEventMap[K]) 
  * 
  * @param options Opções de configuração contendo o socket, logger e callbacks de ciclo de vida.
  */
-export function registerEvents({ sock, logger, reconnect, connectionId, onConnected, onDisconnected }: RegisterOptions): void {
+export function registerEvents({ sock, logger, reconnect, connectionId, onConnected, onDisconnected, onMessageReceived }: RegisterOptions): void {
   const socketWithCredsFlush = sock as SocketWithCredsFlush
   const socketWithNewsletterMetadata = sock as SocketWithNewsletterMetadata
   const sqlStore = createSqlStore(connectionId)
@@ -599,6 +601,7 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
       }
     },
     'messages.upsert': async (event) => {
+      onMessageReceived?.()
       logger.info('messages.upsert received', {
         count: event.messages.length,
         type: event.type,

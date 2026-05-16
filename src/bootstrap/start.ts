@@ -14,6 +14,8 @@ let activeSocket: WASocket | null = null
 let socketGeneration = 0
 let reconnectAttempt = 0
 let waConnected = false
+let lastMessageReceivedAt: number | null = null
+let memoryWatchdogTimer: NodeJS.Timeout | null = null
 let metricsServerHandle: { stop: () => Promise<void> } | null = null
 let healthServerHandle: { stop: () => Promise<void> } | null = null
 
@@ -111,6 +113,9 @@ const replaceSocket = async (reason: string) => {
     onDisconnected: () => {
       waConnected = false
     },
+    onMessageReceived: () => {
+      lastMessageReceivedAt = Date.now()
+    },
   })
   logger.info('Bot started successfully.', { connectionId, generation, reason })
 }
@@ -166,9 +171,34 @@ export async function start(): Promise<void> {
   if (!healthServerHandle) {
     healthServerHandle = startHealthServer({
       logger,
-      getState: () => ({ connected: waConnected, socketGeneration, reconnectAttempt }),
+      getState: () => ({
+        connected: waConnected,
+        socketGeneration,
+        reconnectAttempt,
+        lastMessageReceivedAt,
+        stalenessThresholdMs: config.stalenessThresholdMs,
+      }),
     })
     registerShutdownHook(() => healthServerHandle!.stop())
+  }
+  if (!memoryWatchdogTimer) {
+    const warnMb = config.memoryWarnMb
+    const exitMb = config.memoryExitMb
+    if (warnMb > 0 || exitMb > 0) {
+      memoryWatchdogTimer = setInterval(() => {
+        const rssMb = process.memoryUsage().rss / 1024 / 1024
+        if (exitMb > 0 && rssMb >= exitMb) {
+          getLogger().error('memory limit exceeded, exiting for clean restart', { rssMb: rssMb.toFixed(1), exitMb })
+          process.exit(1)
+        } else if (warnMb > 0 && rssMb >= warnMb) {
+          getLogger().warn('high memory usage', { rssMb: rssMb.toFixed(1), warnMb })
+        }
+      }, 60_000)
+      memoryWatchdogTimer.unref()
+      registerShutdownHook(async () => {
+        if (memoryWatchdogTimer) { clearInterval(memoryWatchdogTimer); memoryWatchdogTimer = null }
+      })
+    }
   }
   await scheduleReconnect('startup')
 }
