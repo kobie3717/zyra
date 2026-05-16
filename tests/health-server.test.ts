@@ -9,10 +9,10 @@ const mockConfig = {
 
 vi.mock('../src/config/index.js', () => ({ config: mockConfig }))
 
-async function httpGet(port: number, path = '/health'): Promise<{ status: number; body: string }> {
+async function httpGet(port: number, path = '/health', agent?: http.Agent): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     http
-      .get(`http://127.0.0.1:${port}${path}`, (res) => {
+      .get(`http://127.0.0.1:${port}${path}`, { agent }, (res) => {
         let body = ''
         res.on('data', (chunk: Buffer) => { body += chunk.toString() })
         res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
@@ -177,5 +177,28 @@ describe('health-server', () => {
     expect(res.body).toContain('zyra_reconnect_attempt 3')
 
     await handle.stop()
+  })
+
+  it('stop() resolves promptly even with an active keep-alive connection', async () => {
+    mockConfig.healthPort = 19117
+    const { startHealthServer } = await import('../src/observability/health-server.ts')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn() }
+    const handle = startHealthServer({ logger: logger as never, getState: defaultState })
+
+    await wait(80)
+
+    // Keep-alive agent holds the TCP connection open after the response.
+    const agent = new http.Agent({ keepAlive: true })
+    await httpGet(19117, '/health', agent)
+
+    // Without closeAllConnections() this would hang until the socket times out.
+    await expect(
+      Promise.race([
+        handle.stop(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('stop() timed out')), 1000)),
+      ])
+    ).resolves.toBeUndefined()
+
+    agent.destroy()
   })
 })

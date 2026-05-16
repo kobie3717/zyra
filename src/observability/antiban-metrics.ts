@@ -81,8 +81,10 @@ export const startAntiBanMetricsServer = ({ logger, getStats }: StartAntiBanMetr
   })
 
   return {
-    stop: async () =>
+    stop: () =>
       new Promise<void>((resolve, reject) => {
+        // Destroy keep-alive connections so server.close() callback fires promptly.
+        server.closeAllConnections()
         server.close((error) => {
           if (error) {
             reject(error)
