@@ -592,7 +592,9 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
         persistDevicesFromMessageKey(key, 'messages.media-update')
         const update = (item as { update?: unknown }).update
         const mergedMessage = { key, ...(typeof update === 'object' && update ? (update as object) : {}) } as WAMessage
-        void maybeRefreshNewsletterMedia(mergedMessage)
+        void maybeRefreshNewsletterMedia(mergedMessage).catch((err) => {
+          if (!isKnownNewsletterMediaRefreshError(err)) logger.warn('[newsletter] media refresh failed', { err })
+        })
         const messageKey = toEventMessageKey(key)
         if (!messageKey) continue
         const chatJid = messageKey.chatJid
@@ -879,7 +881,9 @@ export function registerEvents({ sock, logger, reconnect, connectionId, onConnec
           eventType: 'settings.update',
           data: { id, update: update ?? null },
         })
-        void syncNewsletterMetadata(id, 'newsletter-settings.update', { force: true })
+        void syncNewsletterMetadata(id, 'newsletter-settings.update', { force: true }).catch((err) => {
+          logger.warn('[newsletter] metadata sync failed', { err, newsletterId: id })
+        })
       }
     },
     'chats.lock': ({ id, locked }) => logEvent('chats.lock', { id, locked }, { chatJid: id, actorJid: resolveSelfJid() }),

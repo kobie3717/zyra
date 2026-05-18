@@ -64,5 +64,12 @@
       "libsignal": "$libsignal"
     },
     "link-preview-js": "4.0.1"
+  },
+  "overrides_rationale": {
+    "vite": "Pinned to 8.0.5 - security vulnerability in older versions. Review quarterly or when upgrading vitest.",
+    "basic-ftp": "Pinned to 5.3.1 - security vulnerability in older versions. Review quarterly.",
+    "baileys_libsignal": "Force Baileys to use our root libsignal version to avoid peer dependency conflicts.",
+    "link-preview-js": "Pinned to 4.0.1 for stability. Review when updating.",
+    "last_reviewed": "2026-05-16"
   }
 }

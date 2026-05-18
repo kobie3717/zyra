@@ -1,9 +1,17 @@
 import { createClient } from 'redis'
 import { config } from '../../config/index.js'
+import { createLogger } from '../../observability/logger.js'
+
+let redisLoggerRef: ReturnType<typeof createLogger> | null = null
+const getRedisLogger = () => {
+  if (!redisLoggerRef) redisLoggerRef = createLogger()
+  return redisLoggerRef
+}
 
 const REDIS_CONNECT_RETRY_BASE_MS = Math.max(100, config.redisConnectRetryBaseMs)
 const REDIS_CONNECT_RETRY_MAX_MS = Math.max(REDIS_CONNECT_RETRY_BASE_MS, config.redisConnectRetryMaxMs)
 const REDIS_CONNECT_MAX_ATTEMPTS = Math.max(1, config.redisConnectMaxAttempts)
+const REDIS_CONNECT_RETRY_JITTER_MS = Math.max(0, config.redisConnectRetryJitterMs)
 
 type AppRedisClient = ReturnType<typeof createClient>
 
@@ -19,7 +27,7 @@ const wait = (ms: number) =>
 
 const computeBackoffMs = (attempt: number): number => {
   const exponential = REDIS_CONNECT_RETRY_BASE_MS * Math.pow(2, Math.max(0, attempt - 1))
-  const jitter = Math.floor(Math.random() * Math.max(1, REDIS_CONNECT_RETRY_BASE_MS * 0.25))
+  const jitter = Math.floor(Math.random() * REDIS_CONNECT_RETRY_JITTER_MS)
   return Math.min(REDIS_CONNECT_RETRY_MAX_MS, Math.floor(exponential + jitter))
 }
 
@@ -47,7 +55,7 @@ const createRedisConnection = (): AppRedisClient => {
     },
   })
   client.on('error', (error) => {
-    console.error('Redis client failure', error)
+    getRedisLogger().error('redis client failure', { err: error })
   })
   client.on('end', () => {
     redisConnectPromise = null
@@ -124,7 +132,7 @@ export async function closeRedisClient(): Promise<void> {
         await client.disconnect()
       }
     } catch (error) {
-      console.error('failed to close Redis client, disconnecting connection', error)
+      getRedisLogger().error('failed to close redis client, disconnecting', { err: error })
       await client.disconnect().catch(() => undefined)
     } finally {
       if (redisClient === client) {

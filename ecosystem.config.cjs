@@ -22,7 +22,7 @@ module.exports = {
         WA_ANTIBAN_DEAF_SESSION_MIN_UPTIME_MS: '120000',
         WA_ANTIBAN_DEAF_SESSION_AUTO_RECONNECT: 'true',
         WA_ANTIBAN_METRICS_ENABLED: 'true',
-        WA_ANTIBAN_METRICS_HOST: '0.0.0.0',
+        WA_ANTIBAN_METRICS_HOST: '127.0.0.1',
         WA_ANTIBAN_METRICS_PORT: '9108',
         WA_ANTIBAN_METRICS_PATH: '/metrics',
       },

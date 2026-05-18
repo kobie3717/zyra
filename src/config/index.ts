@@ -302,6 +302,10 @@ export const config = {
   get redisConnectRetryMaxMs() {
     return readNumber(process.env.WA_REDIS_CONNECT_RETRY_MAX_MS, 10_000)
   },
+  /** Jitter range in ms for Redis reconnect backoff to prevent thundering herd (WA_REDIS_CONNECT_RETRY_JITTER_MS). */
+  get redisConnectRetryJitterMs() {
+    return readNumber(process.env.WA_REDIS_CONNECT_RETRY_JITTER_MS, 200)
+  },
   /** Maximum Redis reconnect attempts before giving up (WA_REDIS_CONNECT_MAX_ATTEMPTS). */
   get redisConnectMaxAttempts() {
     return readNumber(process.env.WA_REDIS_CONNECT_MAX_ATTEMPTS, 4)
