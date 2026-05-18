@@ -29,8 +29,8 @@ export function getMysqlPool(): Pool | null {
       // Sanitize error to avoid logging credentials from connection strings
       const sanitized = {
         message: err instanceof Error ? err.message : String(err),
-        code: (err as any)?.code,
-        errno: (err as any)?.errno,
+        code: (err as NodeJS.ErrnoException)?.code,
+        errno: (err as NodeJS.ErrnoException)?.errno,
       }
       getMysqlLogger().error('mysql pool error', { err: sanitized })
     })
